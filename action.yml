@@ -1,5 +1,5 @@
-name: mcplint
-description: Fail the pull request when MCP config gains a server, a permission, or a field mcplint cannot read.
+name: mcp-policy-lint
+description: Fail the pull request when MCP config gains a server, a permission, or a field mcp-policy-lint cannot read.
 author: ravenkernel
 branding:
   icon: shield
@@ -15,7 +15,7 @@ inputs:
     required: false
     default: ''
   unknown:
-    description: What a field mcplint cannot model costs. One of error, warn, ignore.
+    description: What a field mcp-policy-lint cannot model costs. One of error, warn, ignore.
     required: false
     default: error
   strict:
@@ -23,26 +23,26 @@ inputs:
     required: false
     default: 'false'
   extra-args:
-    description: Extra arguments appended to mcplint check.
+    description: Extra arguments appended to mcp-policy-lint check.
     required: false
     default: ''
   version:
     description: Version requirement for the mcp-policy-lint package.
     required: false
-    default: '>=0.1.2,<0.2'
+    default: '>=0.2.0,<0.3'
 
 outputs:
   exit-code:
-    description: The exit code mcplint returned.
+    description: The exit code mcp-policy-lint returned.
     value: ${{ steps.check.outputs.exit-code }}
 
 runs:
   using: composite
   steps:
-    - name: Install mcplint
+    - name: Install mcp-policy-lint
       shell: bash
       run: python -m pip install --disable-pip-version-check --quiet "mcp-policy-lint${{ inputs.version }}"
-    - name: mcplint check
+    - name: mcp-policy-lint check
       id: check
       shell: bash
       env:
@@ -57,6 +57,6 @@ runs:
         if [ -n "$MC_BASELINE" ]; then argv+=(--baseline "$MC_BASELINE"); fi
         if [ "$MC_STRICT" = "true" ]; then argv+=(--strict); fi
         code=0
-        mcplint check $MC_PATH "${argv[@]}" $MC_EXTRA || code=$?
+        mcp-policy-lint check $MC_PATH "${argv[@]}" $MC_EXTRA || code=$?
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
         exit $code

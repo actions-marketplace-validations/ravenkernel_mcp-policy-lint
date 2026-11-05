@@ -6,12 +6,12 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from mcplint import cli, exitcode
-from mcplint.diff import diff
-from mcplint.model import Policy
-from mcplint.normalize import normalize
-from mcplint.policy import build_policy
-from mcplint.rules import evaluate
+from mcp_policy_lint import cli, exitcode
+from mcp_policy_lint.diff import diff
+from mcp_policy_lint.model import Policy
+from mcp_policy_lint.normalize import normalize
+from mcp_policy_lint.policy import build_policy
+from mcp_policy_lint.rules import evaluate
 
 
 def run_cli(argv):
@@ -45,7 +45,7 @@ class CoverageTests(unittest.TestCase):
                                                        "transport": {"type": "sse"}}}})
         servers, notes = normalize(json.loads(Path(p).read_text()), source=p)
         self.assertEqual(servers[0].unmodeled, ["transport"])
-        self.assertIn("MCP009", {f.rule_id for f in notes})
+        self.assertIn("POL009", {f.rule_id for f in notes})
         self.assertEqual(run_cli(["check", p]), exitcode.FINDINGS)
         self.assertEqual(run_cli(["check", p, "--unknown", "warn"]), exitcode.OK)
         self.assertEqual(run_cli(["check", p, "--unknown", "warn", "--strict"]), exitcode.FINDINGS)
@@ -57,7 +57,7 @@ class CoverageTests(unittest.TestCase):
         servers, notes = normalize(json.loads(Path(p).read_text()), source=p)
         self.assertEqual(servers[0].url, "http://api.example.com/mcp")
         self.assertEqual(notes, [])
-        hits = [f for f in evaluate(servers) if f.rule_id == "MCP003"]
+        hits = [f for f in evaluate(servers) if f.rule_id == "POL003"]
         self.assertTrue(hits)
         self.assertEqual(hits[0].pointer, "/mcpServers/w/serverUrl")
         self.assertEqual(hits[0].severity, "error")
@@ -65,7 +65,7 @@ class CoverageTests(unittest.TestCase):
     def test_loopback_plaintext_is_a_warning(self):
         p = self.write("e.json", {"mcpServers": {"l": {"url": "http://localhost:3000/mcp"}}})
         servers, _ = normalize(json.loads(Path(p).read_text()), source=p)
-        hits = [f for f in evaluate(servers) if f.rule_id == "MCP003"]
+        hits = [f for f in evaluate(servers) if f.rule_id == "POL003"]
         self.assertEqual([h.severity for h in hits], ["warn"])
         self.assertEqual(run_cli(["check", p]), exitcode.OK)
 
@@ -73,7 +73,7 @@ class CoverageTests(unittest.TestCase):
         p = self.write("c.json", {"mcpServers": {"c": {"command": "npx",
                                                        "autoApprove": ["delete_everything"]}}})
         servers, _ = normalize(json.loads(Path(p).read_text()), source=p)
-        self.assertEqual([f.rule_id for f in evaluate(servers)], ["MCP010"])
+        self.assertEqual([f.rule_id for f in evaluate(servers)], ["POL010"])
         live = build_policy(servers).servers["c"]
         self.assertEqual(live["auto_approve"], ["delete_everything"])
         approved = Policy(version=1, servers={"c": dict(live, auto_approve=[])})
@@ -83,7 +83,7 @@ class CoverageTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()) as buf:
             self.assertEqual(cli.main(["rules"]), exitcode.OK)
         ids = {line.split()[0] for line in buf.getvalue().splitlines() if line.strip()}
-        self.assertLessEqual({"MCP000", "MCP007", "MCP009", "MCP010"}, ids)
+        self.assertLessEqual({"POL000", "POL007", "POL009", "POL010"}, ids)
 
     def test_coverage_table_names_what_was_not_consumed(self):
         p = self.write("d.json", {"mcpServers": {"d": {"command": "npx",

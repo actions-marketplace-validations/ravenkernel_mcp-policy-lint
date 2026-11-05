@@ -33,59 +33,59 @@ def _carries_command(args: list[str]) -> bool:
     return False
 
 
-@register("MCP001")
+@register("POL001")
 def shell_command(s: ServerSpec) -> list[Finding]:
     cmd = (s.command or "").strip()
     if cmd in SHELLS or _carries_command(s.args):
-        return [_f("MCP001", "error", "stdio command can start a shell",
+        return [_f("POL001", "error", "stdio command can start a shell",
                    f"{s.name} runs its arguments through {cmd or '?'}, so it can execute arbitrary commands", s,
                    f"{s.pointer}/command", "Call a concrete executable directly instead of assembling a command with -c",
                    "arbitrary command execution")]
     return []
 
 
-@register("MCP002")
+@register("POL002")
 def sensitive_env(s: ServerSpec) -> list[Finding]:
     out = []
     for k, v in s.env.items():
         if SENSITIVE_ENV.search(k) and not PLACEHOLDER.match(v.strip()):
-            out.append(_f("MCP002", "error", "Likely real credential in config",
+            out.append(_f("POL002", "error", "Likely real credential in config",
                           f"{k} is not a placeholder; it can leak through logs or travel with the repository", s,
                           f"{s.pointer}/env/{escape_pointer(k)}", "Reference an environment variable or a secret manager; never put the value in mcp.json",
                           "credential leakage"))
     return out
 
 
-@register("MCP003")
+@register("POL003")
 def plaintext_remote(s: ServerSpec) -> list[Finding]:
     if not s.url or urlparse(s.url).scheme != "http":
         return []
     host = (urlparse(s.url).hostname or "").lower()
     if host in LOOPBACK:
-        return [_f("MCP003", "warn", "Plaintext HTTP to a loopback address",
+        return [_f("POL003", "warn", "Plaintext HTTP to a loopback address",
                    f"{s.url} is reachable only from this host, but it is still plaintext; forwarding the port or tunnelling makes it unacceptable", s,
                    f"{s.pointer}/{s.url_field}", "Acceptable for local development; switch to https as soon as the port is forwarded or the server moves",
                    "local plaintext transport")]
-    return [_f("MCP003", "error", "Plaintext HTTP to a remote endpoint",
+    return [_f("POL003", "error", "Plaintext HTTP to a remote endpoint",
                f"{s.url} has no TLS, so tool descriptions and responses can be altered in transit", s,
                f"{s.pointer}/{s.url_field}", "Use https:// and confirm the authentication settings",
                "transport tampering")]
 
 
-@register("MCP004")
+@register("POL004")
 def roots_outside_repo(s: ServerSpec) -> list[Finding]:
     out = []
     for i, r in enumerate(s.roots):
         segments = r.replace("\\", "/").split("/")
         if HOME_PATH.match(r) or r.strip() in {"/", "C:\\"} or ".." in segments:
-            out.append(_f("MCP004", "error", "root outside the repository boundary",
+            out.append(_f("POL004", "error", "root outside the repository boundary",
                           f"root {r} points at a home directory or escapes the repository", s,
                           f"{s.pointer}/roots/{i}", "Narrow roots to the current project directory",
                           "unbounded file access"))
     return out
 
 
-@register("MCP005")
+@register("POL005")
 def annotation_conflict(s: ServerSpec) -> list[Finding]:
     out = []
     for t in s.tools:
@@ -93,14 +93,14 @@ def annotation_conflict(s: ServerSpec) -> list[Finding]:
         destruct = t.annotations.get("destructiveHint") is False
         text = f"{t.name} {t.description}"
         if (readonly or destruct) and WRITE_WORDS.search(text):
-            out.append(_f("MCP005", "warn", "Tool annotation contradicts its name or description",
+            out.append(_f("POL005", "warn", "Tool annotation contradicts its name or description",
                           f"{t.name} claims read-only or non-destructive, but its description contains write verbs", s,
                           t.pointer, "Fix the annotation or the name; a client may skip confirmation because of it",
                           "consent bypass"))
     return out
 
 
-@register("MCP006")
+@register("POL006")
 def empty_schema(s: ServerSpec) -> list[Finding]:
     out = []
     for t in s.tools:
@@ -109,28 +109,28 @@ def empty_schema(s: ServerSpec) -> list[Finding]:
         constrained = bool(schema.get("properties") or schema.get("required")
                            or schema.get("additionalProperties") is False)
         if not constrained:
-            out.append(_f("MCP006", "warn", "Tool input has no constraints",
+            out.append(_f("POL006", "warn", "Tool input has no constraints",
                           f"{t.name} has an empty inputSchema or no properties, so argument boundaries cannot be checked", s,
                           t.pointer, "Complete the JSON Schema: declare required fields and enums",
                           "unbounded input"))
     return out
 
 
-@register("MCP008")
+@register("POL008")
 def undeclared_transport(s: ServerSpec) -> list[Finding]:
     if s.transport == "unknown":
-        return [Finding("MCP008", "warn", "Transport not declared",
+        return [Finding("POL008", "warn", "Transport not declared",
                         f"{s.name} has neither command nor url, so its permission surface cannot be inferred", s.name,
                         s.pointer, "Add command or url; unknown does not mean safe",
                         "undetermined permission surface", unknown=True)]
     return []
 
 
-@register("MCP010")
+@register("POL010")
 def pre_approved_tools(s: ServerSpec) -> list[Finding]:
     if s.auto_approve:
         listed = ", ".join(sorted(s.auto_approve))
-        return [_f("MCP010", "warn", "Pre-approved tools skip confirmation",
+        return [_f("POL010", "warn", "Pre-approved tools skip confirmation",
                    f"{s.name} auto-approves {len(s.auto_approve)} tool(s): {listed}. "
                    "That list is part of the baseline, so adding one triggers drift", s,
                    f"{s.pointer}/autoApprove",

@@ -5,12 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mcplint import cli, exitcode
-from mcplint.samples import SAFE_MCP, UNSAFE_MCP
-from mcplint.model import Policy
-from mcplint.policy import build_policy, load_policy
-from mcplint.normalize import from_paths
-from mcplint.diff import diff
+from mcp_policy_lint import cli, exitcode
+from mcp_policy_lint.samples import SAFE_MCP, UNSAFE_MCP
+from mcp_policy_lint.model import Policy
+from mcp_policy_lint.policy import build_policy, load_policy
+from mcp_policy_lint.normalize import from_paths
+from mcp_policy_lint.diff import diff
 
 
 class E2ETests(unittest.TestCase):
@@ -48,9 +48,9 @@ class E2ETests(unittest.TestCase):
                          exitcode.FINDINGS)
 
     def test_html_is_self_contained(self):
-        from mcplint.report import render_html
-        from mcplint.rules import evaluate
-        from mcplint.normalize import from_paths as fp
+        from mcp_policy_lint.report import render_html
+        from mcp_policy_lint.rules import evaluate
+        from mcp_policy_lint.normalize import from_paths as fp
         servers, _ = fp([Path(self.unsafe)])
         page = render_html(evaluate(servers), [], 1)
         self.assertIn("<!doctype html>", page)

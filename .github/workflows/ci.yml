@@ -24,4 +24,4 @@ jobs:
         run: python scripts/gate_selftest.py
       - name: coverage table (informational)
         if: always()
-        run: mcplint coverage examples/safe.mcp.json examples/unsafe.mcp.json || true
+        run: mcp-policy-lint coverage examples/safe.mcp.json examples/unsafe.mcp.json || true

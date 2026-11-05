@@ -13,7 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from mcplint import cli  # noqa: E402
+from mcp_policy_lint import cli  # noqa: E402
 
 FIXTURES = ROOT / "fixtures" / "gate"
 

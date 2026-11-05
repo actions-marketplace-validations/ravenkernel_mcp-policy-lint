@@ -19,7 +19,7 @@ def _rows(findings, diffs):
 
 
 def render_text(findings, diffs, exit_code: int) -> str:
-    head = f"mcplint {__version__} — {len(findings)} findings"
+    head = f"mcp-policy-lint {__version__} — {len(findings)} findings"
     if diffs:
         head += f", {len(diffs)} drift rows"
     lines = [head, ""]
@@ -44,7 +44,7 @@ def render_coverage(files, servers, findings) -> str:
         rows.append((Path(s.source).name if s.source else "<inline>", s.name, s.transport,
                      ",".join(s.modeled_fields()) or "-", ",".join(s.unmodeled) or "-"))
     widths = [max(len(str(r[i])) for r in rows) for i in range(5)]
-    out = [f"mcplint {__version__} coverage — {len(files)} config(s), {len(servers)} server(s)", ""]
+    out = [f"mcp-policy-lint {__version__} coverage — {len(files)} config(s), {len(servers)} server(s)", ""]
     for i, row in enumerate(rows):
         out.append("  ".join(str(c).ljust(w) for c, w in zip(row, widths)).rstrip())
         if i == 0:
@@ -63,7 +63,7 @@ def render_ndjson(findings, diffs) -> str:
 
 
 def render_json(findings, diffs, exit_code: int) -> str:
-    return json.dumps({"schema_version": 1, "tool": "mcplint", "version": __version__,
+    return json.dumps({"schema_version": 1, "tool": "mcp-policy-lint", "version": __version__,
                        "exit_code": exit_code, "findings": [f.as_dict() for f in findings],
                        "diff": [d.as_dict() for d in diffs]},
                       indent=2, ensure_ascii=False) + "\n"
@@ -99,8 +99,8 @@ def render_html(findings, diffs, exit_code: int) -> str:
     return (
         "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        f"<title>mcplint report</title><style>{_CSS}</style>"
-        f"<h1>mcplint {__version__} — exit code {exit_code}</h1>"
+        f"<title>mcp-policy-lint report</title><style>{_CSS}</style>"
+        f"<h1>mcp-policy-lint {__version__} — exit code {exit_code}</h1>"
         "<input id=\"q\" oninput=\"flt()\" placeholder=\"filter findings\"> "
         "<select id=\"sev\" onchange=\"flt()\"><option value=\"\">all severities</option>"
         "<option value=\"error\">error</option><option value=\"warn\">warn</option>"

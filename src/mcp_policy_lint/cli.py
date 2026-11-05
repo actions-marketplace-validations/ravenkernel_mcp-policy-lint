@@ -123,9 +123,9 @@ def cmd_demo(args):
         findings = exitcode.resolve(notes + evaluate(s_bad), "error")
         rows = diff(s_bad, load_policy(policy_file.read_text(encoding="utf-8")))
         code = exitcode.decide(findings, [], strict=False)
-        print(f"mcplint demo — {len(s_bad)} servers scanned, {len(findings)} findings")
+        print(f"mcp-policy-lint demo — {len(s_bad)} servers scanned, {len(findings)} findings")
         print("no network, no API key, no Docker")
-        print(f"(vs sample baseline: {len(rows)} drift rows — run `mcplint diff` to inspect)\n")
+        print(f"(vs sample baseline: {len(rows)} drift rows — run `mcp-policy-lint diff` to inspect)\n")
         sys.stdout.write(render_text(findings, [], code))
         sys.stdout.write(render_coverage([unsafe], s_bad, findings))
     return code
@@ -136,13 +136,13 @@ class _Parser(argparse.ArgumentParser):
 
     def error(self, message):
         self.print_usage(sys.stderr)
-        print(f"mcplint: {message}", file=sys.stderr)
+        print(f"mcp-policy-lint: {message}", file=sys.stderr)
         sys.exit(exitcode.USAGE)
 
 
 def build_parser():
-    p = _Parser(prog="mcplint", description=__doc__)
-    p.add_argument("--version", action="version", version=f"mcplint {__version__}")
+    p = _Parser(prog="mcp-policy-lint", description=__doc__)
+    p.add_argument("--version", action="version", version=f"mcp-policy-lint {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     def common(sp, with_path=True):
@@ -191,5 +191,5 @@ def main(argv=None) -> int:
     try:
         return int(args.func(args))
     except (OSError, ValueError) as exc:   # bad path, bad JSON, bad policy all mean "fix your input"
-        print(f"mcplint: {exc}", file=sys.stderr)
+        print(f"mcp-policy-lint: {exc}", file=sys.stderr)
         return exitcode.USAGE

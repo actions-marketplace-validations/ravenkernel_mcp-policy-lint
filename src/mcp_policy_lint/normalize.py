@@ -27,10 +27,10 @@ MODELED_KEYS = frozenset(FIELD_TYPES)
 
 # Findings produced here rather than by a registered rule function.
 STRUCTURAL_RULES = {
-    "MCP000": "Unrecognized config shape",
-    "MCP007": "Unknown capability",
-    "MCP009": "Config field not modeled",
-    "MCP011": "Duplicate server name",
+    "POL000": "Unrecognized config shape",
+    "POL007": "Unknown capability",
+    "POL009": "Config field not modeled",
+    "POL011": "Duplicate server name",
 }
 
 KNOWN_CAPABILITIES = frozenset({
@@ -41,7 +41,7 @@ KNOWN_CAPABILITIES = frozenset({
 def _servers_block(data: dict) -> tuple[dict, str, bool]:
     """(servers block, its pointer, whether the file declares one at all).
 
-    An empty block is a pass with zero servers; a missing block is MCP000.
+    An empty block is a pass with zero servers; a missing block is POL000.
     """
     for key in ("mcpServers", "servers"):
         if isinstance(data.get(key), dict):
@@ -81,7 +81,7 @@ def normalize(data: dict, source: str = "") -> tuple[list[ServerSpec], list[Find
     servers: list[ServerSpec] = []
     notes: list[Finding] = []
     if not found:
-        notes.append(Finding("MCP000", "error", "Unrecognized config shape",
+        notes.append(Finding("POL000", "error", "Unrecognized config shape",
                              "No mcpServers / servers / mcp.servers block found, so nothing in this file was checked: "
                              "the result is unknown, not pass",
                              "<config>", "/", "Add this client's top-level key in normalize._servers_block",
@@ -95,14 +95,14 @@ def normalize(data: dict, source: str = "") -> tuple[list[ServerSpec], list[Find
                        if k in raw and raw[k] is not None and not isinstance(raw[k], kind))
         extra = sorted(set(raw) - MODELED_KEYS - set(wrong))
         if wrong:
-            notes.append(Finding("MCP009", "warn", "Config field not modeled",
+            notes.append(Finding("POL009", "warn", "Config field not modeled",
                                  f"{name} declares {', '.join(wrong)} with an unexpected type; "
                                  "the value was dropped, so whatever it declared is unknown",
                                  str(name), ptr,
                                  "Fix the type in the config, or model the variant in normalize.FIELD_TYPES",
                                  "unchecked permission surface", unknown=True))
         if extra:
-            notes.append(Finding("MCP009", "warn", "Config field not modeled",
+            notes.append(Finding("POL009", "warn", "Config field not modeled",
                                  f"{name} has {len(extra)} unmodeled field(s) "
                                  f"({', '.join(extra)}); rules that depend on them report unknown, not pass",
                                  str(name), ptr,
@@ -115,7 +115,7 @@ def normalize(data: dict, source: str = "") -> tuple[list[ServerSpec], list[Find
         url, server_url = _text(raw, "url"), _text(raw, "serverUrl")
         # Unknown capability keys are surfaced, never silently trusted.
         for cap in sorted(set(caps) - KNOWN_CAPABILITIES):
-            notes.append(Finding("MCP007", "warn", "Unknown capability",
+            notes.append(Finding("POL007", "warn", "Unknown capability",
                                  f"{name} declares an unrecognized capability: {cap}",
                                  str(name), f"{ptr}/capabilities/{escape_pointer(cap)}",
                                  "Confirm the client supports it, or drop the declaration",
@@ -152,7 +152,7 @@ def from_paths(paths: list[Path]) -> tuple[list[ServerSpec], list[Finding]]:
                 seen[s.name] = str(p)
             else:
                 # A baseline is keyed by server name, so a duplicate makes drift undefined.
-                file_notes.append(Finding("MCP011", "error", "Duplicate server name",
+                file_notes.append(Finding("POL011", "error", "Duplicate server name",
                                           f"{s.name} is declared in both {first} and {p}; a baseline can approve only "
                                           "one of them, so the drift result is undefined",
                                           s.name, s.pointer,

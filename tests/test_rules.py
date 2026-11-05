@@ -1,9 +1,9 @@
 import unittest
 
-from mcplint.model import ServerSpec, ToolSpec
-from mcplint.rules import REGISTRY, evaluate
-from mcplint.samples import SAFE_MCP, UNSAFE_MCP
-from mcplint.normalize import normalize
+from mcp_policy_lint.model import ServerSpec, ToolSpec
+from mcp_policy_lint.rules import REGISTRY, evaluate
+from mcp_policy_lint.samples import SAFE_MCP, UNSAFE_MCP
+from mcp_policy_lint.normalize import normalize
 import json
 
 
@@ -18,12 +18,12 @@ class RuleTests(unittest.TestCase):
 
     def test_unsafe_triggers_multiple_rules(self):
         ids = {f.rule_id for f in evaluate(self.unsafe)}
-        self.assertTrue({"MCP001", "MCP002", "MCP004", "MCP005", "MCP006"} <= ids, ids)
+        self.assertTrue({"POL001", "POL002", "POL004", "POL005", "POL006"} <= ids, ids)
 
     def test_plaintext_remote(self):
         servers = normalize(json.loads(UNSAFE_MCP))[0]
         remote = [s for s in servers if s.name == "remote"][0]
-        self.assertTrue(any(f.rule_id == "MCP003" for f in evaluate([remote])))
+        self.assertTrue(any(f.rule_id == "POL003" for f in evaluate([remote])))
 
     def test_registry_is_populated(self):
         self.assertGreaterEqual(len(REGISTRY), 7)
