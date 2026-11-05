@@ -170,7 +170,7 @@ Action 会安装 `mcp-policy-lint`、运行 `mcplint check`，并用 mcplint 自
 
 ## 状态
 
-0.1.2：可运行端到端，内置 9 条规则（MCP001-006 / 008 / 009 / 010），CLI 与库均可测。自 0.1.1 起 lint 输出为英文（0.1.0 规则相同，输出为中文）。0.1.2 是第一个 PyPI 版本，把我手工撞出来的崩溃与误报变成了测试：字段类型不对是 MCP009 而不是异常，名字含 `/` 的 server 产出合法 pointer（`a~1b`），同名 server 报 MCP011，`git -c user.name=x` 不再当作 shell，`--rule` 编号或参数打错是退出码 3 而不是静默通过。
+0.1.3 只增加了上面的 GitHub Action，规则与退出码不变，这样 PyPI 页面上也能看到大多数团队实际的使用方式。0.1.2：可运行端到端，内置 9 条规则（MCP001-006 / 008 / 009 / 010），CLI 与库均可测。自 0.1.1 起 lint 输出为英文（0.1.0 规则相同，输出为中文）。0.1.2 是第一个 PyPI 版本，把我手工撞出来的崩溃与误报变成了测试：字段类型不对是 MCP009 而不是异常，名字含 `/` 的 server 产出合法 pointer（`a~1b`），同名 server 报 MCP011，`git -c user.name=x` 不再当作 shell，`--rule` 编号或参数打错是退出码 3 而不是静默通过。
 
 配置格式兼容性目前覆盖 `mcpServers` / `servers` / `mcp.servers` 三种顶层形态，以及 Claude Desktop / Cursor / VS Code / Cline / Windsurf 的常见字段。**没覆盖的部分不会假装通过**：未建模字段一律产出 MCP009，由 `--unknown`（默认 error）决定它是否阻断合并；`mcplint coverage` 打印完整的字段消费表。
 
