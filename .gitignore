@@ -7,3 +7,5 @@ dist/
 build/
 report.html
 .pytest_cache/
+CLAUDE.md
+.claude/

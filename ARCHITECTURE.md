@@ -2,67 +2,121 @@
 
 **English** | [简体中文](ARCHITECTURE.zh-CN.md)
 
-## One-line architecture
+## What this page is for
 
-**discover → normalize → rules → policy → report → exit code.** Six layers, all pure-function stdlib modules: no global state, no network, no plugin-loader magic.
+If you only want to run mcplint, the [README](README.md) is enough. This page answers the
+next question: *why did this finding appear, and where did my exit code come from?* Every
+conclusion the tool prints can be traced through the six stages below back to a byte in
+your config file.
+
+## The path of one config file
 
 ```
-CLI (argparse)
-  ├─ discover.py   paths → [file paths]          (multi-client config discovery)
-  ├─ normalize.py  dict → [ServerSpec]           (per-client formats, with JSON Pointers)
-  ├─ rules/        ServerSpec → [Finding]        (registry-based rule engine)
-  ├─ policy.py     [ServerSpec] → Policy         (baseline creation / fingerprints)
-  ├─ diff.py       Policy vs Current → [DiffRow] (drift detection)
-  ├─ report.py     Findings + Diff → text/ndjson/json/single-file HTML
-  └─ exitcode.py   Findings + Diff + strict → 0/1/2/3
+mcplint scan .            discover   which files are read
+                          normalize  dict -> [ServerSpec] + structural findings
+                          rules      ServerSpec -> [Finding]
+mcplint diff / check      policy     baseline: what was approved, and its fingerprint
+                          diff       current permission surface vs approved one
+mcplint coverage          report     text / ndjson / json / single-file HTML
+-- exit --                exitcode   findings + drift + --strict -> 0 / 1 / 2 / 3
 ```
 
-## Module responsibilities and extension points
+## Stage by stage, in user terms
 
-| module | responsibility | where to change when adding a feature |
+1. **discover** — you pass files or directories; the tool walks directories, skips the
+   usual noise (`SKIP_DIRS`), and keeps only filenames it recognizes in `CANDIDATE_NAMES`.
+   Nothing is downloaded, nothing is executed.
+2. **normalize** — every client writes the same idea differently (`mcpServers` vs
+   `servers`, `url` vs `serverUrl`, `type` sometimes absent). This stage folds each file
+   into one `ServerSpec`, remembering for every field the JSON Pointer it came from. Whatever
+   it cannot fold becomes a *structural finding* instead of being dropped: an unrecognized
+   shape (`MCP000`), an unknown capability (`MCP007`), a field it does not model
+   (`MCP009`), or a server name defined twice (`MCP011`).
+3. **rules** — eight registered rules read `ServerSpec` only. They never touch raw JSON,
+   which is why a rule cannot crash on a config shape it has not seen. `mcplint rules`
+   prints the whole list, structural findings included.
+4. **policy** — `mcplint init` writes a baseline: per server, a fingerprint plus the
+   permission surface (`allowed_tools`, `roots`, `net_egress`, `env_allowlist`,
+   `auto_approve`, `disabled`, and `waivers` for accepted findings). Values of env vars are
+   never stored, only their names.
+5. **diff** — `mcplint diff` compares the current surface against the baseline
+   structurally, never as a text diff. A server appears or disappears, the fingerprint
+   changes, or one dimension gains or loses an entry.
+6. **report and exit code** — the report formats the findings; the exit code decides for
+   CI.
+
+## The exit code is the product
+
+| code | meaning | typical cause |
 | --- | --- | --- |
-| `discover.py` | explicit path / directory recursion / well-known client filenames | add one entry to `CANDIDATE_NAMES` |
-| `normalize.py` | parse `mcpServers` / `servers` / `mcp.servers` into a uniform `ServerSpec` | add a `_parse_*` branch |
-| `model.py` | every dataclass plus `fingerprint()`; the only data contract | new field = new dataclass field, no signature changes |
-| `rules/__init__.py` | the `@register` registry and `evaluate()` | leave alone |
-| `rules/builtin.py` | built-in rules, each depending only on `ServerSpec` | one function per rule — the good-first-issue surface |
-| `policy.py` | baseline JSON: fingerprint / allowed_tools / roots / net_egress / env_allowlist / waivers | new policy dimension = new field plus a schema version bump |
-| `diff.py` | structural diff, never a textual JSON diff | new dimension = a new `DiffRow.kind` |
-| `report.py` | four renderers, self-contained HTML | new format = a new `render_*` |
-| `cli.py` | six subcommands, orchestration only | new subcommand = a new `cmd_*` |
+| 0 | pass | nothing to report |
+| 1 | findings failed | a rule fired at `error` (including `unknown`, which costs `error` by default) |
+| 2 | policy drift | a server, a permission or a fingerprint differs from the baseline |
+| 3 | usage or config error | bad path, bad JSON, bad policy file, unknown `--rule`, typo in a flag |
 
-## Core data contracts
+Precedence is `3 > 2 > 1 > 0`: a broken input outranks a broken policy, which outranks a
+finding. `--strict` promotes `warn` to a failure. `--unknown warn|ignore` is the only way
+to make an unmodeled field cost less — there is no flag that makes it cost nothing and stay
+invisible without saying so.
+
+## What each stage guarantees
+
+| stage | you can rely on | the failure it refuses to hide |
+| --- | --- | --- |
+| discover | no network, no subprocess | a config you passed but nobody read (`MCP000` if its shape is unknown) |
+| normalize | every finding carries a resolvable JSON Pointer | a field silently dropped because its type was wrong (`MCP009`) |
+| rules | a rule never sees raw JSON | a rule that cannot judge is marked `unknown`, not passed |
+| policy | values are not stored, only names and fingerprints | a baseline that would leak secrets |
+| diff | a change in the permission surface is an error; a removal is a warning | a textual diff that drowns the one line that matters |
+| report | self-contained HTML, machine-readable JSON/NDJSON | a report that needs a network to render |
+
+## Data contracts
 
 ```python
-ServerSpec(name, command, args, url, env, roots, tools, capabilities, source, pointer,
-           transport, url_field, auto_approve, disabled, unmodeled)
+ServerSpec(name, command, args, url, url_field, env, roots, tools, capabilities,
+           auto_approve, disabled, unmodeled, source, pointer)
 ToolSpec(name, description, annotations, input_schema, pointer)
-Finding(rule_id, severity, title, message, server, pointer, remediation, threat, unknown=False)
-Policy(version=1, servers={name: {fingerprint, allowed_tools, roots,
+Finding(rule_id, severity, title, message, server, pointer,
+        remediation, threat, unknown=False)
+Policy(version=1, servers={name: {fingerprint, transport, allowed_tools, roots,
                                   net_egress, env_allowlist, auto_approve,
                                   disabled, waivers}})
 DiffRow(kind, server, path, before, after, severity)
 ```
 
-`pointer` is always a JSON Pointer (e.g. `/mcpServers/shell/env`), so every conclusion can be traced back to the exact bytes in the config. That is the difference between trustworthy and merely plausible.
+`pointer` is always an RFC 6901 JSON Pointer (`/mcpServers/a~1b/command` for a server
+named `a/b`), so a finding resolves with any JSON Pointer tool you already have.
 
-## Three design constraints, held from the skeleton onward
+## Where to change things
 
-1. **Zero runtime dependencies**: `dependencies = []`, `argparse` for the CLI, `unittest` for tests, hand-written inline CSS/JS for the HTML report. Any extra must prove the core path does not need it.
-2. **unknown ≠ safe**: a capability or field the parser does not understand becomes a finding, never a silent pass. Since 0.1.0 an unknown also costs an exit code: `--unknown error` is the default, and `mcplint coverage` prints what was and was not consumed.
-3. **Read-only**: never executes a server, never fetches remote capabilities, never writes user config. The only writes are the report and the baseline named by `--out`.
+| module | responsibility | first place to look when extending |
+| --- | --- | --- |
+| `discover.py` | explicit paths, directory recursion, known client filenames | `CANDIDATE_NAMES` |
+| `normalize.py` | per-client shapes into one `ServerSpec`; structural findings | `FIELD_TYPES` (a key missing here becomes `MCP009`) |
+| `model.py` | all dataclasses, `fingerprint()`, pointer escaping | add a dataclass field, no signature changes |
+| `rules/__init__.py` | the `@register` registry and `evaluate()` | leave alone |
+| `rules/builtin.py` | the eight built-in rules | one function per rule, the good-first-issue surface |
+| `policy.py` | baseline JSON and fingerprints | a new permission dimension plus a schema version bump |
+| `diff.py` | structural comparison | a new `DiffRow.kind` and its severity |
+| `report.py` | five renderers, self-contained HTML | a new `render_*` |
+| `cli.py` | seven subcommands, orchestration only | a new `cmd_*` |
+| `fixtures/gate` + `scripts/gate_selftest.py` | the exit-code contract as data | a new fixture with its expected code |
 
-## Working order from skeleton to 0.1.0
+## Three constraints held since the skeleton
 
-1. `python -m mcplint demo` runs end to end
-2. collect real client configs → extend `discover.py` / `normalize.py`
-3. grow rules from 7 to 15+, each with a failure fixture and a false-positive sample
-4. give `policy.py` waiver semantics and schema migration
-5. GitHub Action (calls `scan` / `check` only, zero telemetry)
-6. five good first issues: a new client path / a new rule / policy schema migration / HTML accessibility / rule test fixtures
+1. **Zero runtime dependencies**: `dependencies = []`, `argparse` for the CLI, `unittest`
+   for tests, hand-written inline CSS for the HTML report. Anything extra has to prove the
+   core path does not need it.
+2. **unknown is not safe**: a capability or field the parser does not understand becomes a
+   finding, never a silent pass — and since 0.1.0 it also costs an exit code, with
+   `--unknown error` as the default. `mcplint coverage` prints what was consumed and what
+   was not, per file and per server.
+3. **Read-only**: never executes a server, never fetches remote capabilities, never edits
+   your config. The only writes are the report and the baseline you name with `--out`.
 
-What actually shipped in 0.1.0: steps 1–2, nine rules (four of the original seven were made stricter or demoted — see the rule severities in `src/mcplint/rules/builtin.py`), `autoApprove` and `disabled` in the baseline, the `coverage` subcommand, and CI that runs a table of expected exit codes on four Python versions. Step 5 is still open.
+## Deliberately out of scope
 
-## Layers deliberately out of scope
-
-Runtime isolation, source-code malware detection, network proxy, LLM judge, SaaS, dashboard, auto-remediation. Either a strong project already owns them, or they would break the product promise: 30 seconds, zero install friction.
+Runtime isolation, source-code malware detection, prompt-injection scanning, network proxy,
+LLM judge, SaaS, dashboard, auto-remediation. Either a strong project already owns that
+layer (ToolHive, mcp-scanner, agentgateway), or adding it would break the promise: thirty
+seconds, no install friction, a verdict you can trace.

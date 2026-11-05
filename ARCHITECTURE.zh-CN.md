@@ -1,64 +1,91 @@
-# mcplint 框架说明
+# mcplint 架构说明
 
 [English](ARCHITECTURE.md) | **简体中文**
 
-## 一句话架构
+## 这页是写给谁看的
 
-**发现 → 归一 → 规则 → 策略 → 报告 → 退出码。** 六层全部是纯函数式 stdlib 模块，没有全局状态、没有网络、没有插件加载器魔法。
+只想把工具跑起来,[README.zh-CN.md](README.zh-CN.md) 就够了。这页回答下一个问题:*这条 finding 为什么出现,退出码又是怎么来的?* 工具给出的每个结论,都能顺着下面六个阶段追回到你配置文件里的某几个字节。
+
+## 一份配置文件的旅程
 
 ```
-CLI (argparse)
-  ├─ discover.py   路径 → [文件路径]      （多客户端配置发现）
-  ├─ normalize.py  dict  → [ServerSpec]   （各家格式归一，带 JSON Pointer）
-  ├─ rules/        ServerSpec → [Finding] （注册式规则引擎）
-  ├─ policy.py     [ServerSpec] → Policy  （基线生成 / 指纹）
-  ├─ diff.py       Policy vs Current → [DiffRow]（漂移检测）
-  ├─ report.py     Findings + Diff → text/ndjson/json/单文件 HTML
-  └─ exitcode.py    Findings + Diff + strict → 0/1/2/3
+mcplint scan .            discover   决定读哪些文件
+                          normalize  dict -> [ServerSpec] + 结构类 finding
+                          rules      ServerSpec -> [Finding]
+mcplint diff / check      policy     基线:谁被批准过,它的指纹是什么
+                          diff       当前权限面 vs 已批准权限面
+mcplint coverage          report     text / ndjson / json / 单文件 HTML
+-- 退出 --                exitcode   findings + drift + --strict -> 0 / 1 / 2 / 3
 ```
 
-## 模块职责与扩展点
+## 逐阶段说明(用使用者的话讲)
 
-| 模块 | 职责 | 加功能时改哪里 |
+1. **discover** —— 你给它文件或目录;它递归目录、跳过常见的噪音目录(`SKIP_DIRS`),只留下它认识的文件名(`CANDIDATE_NAMES` 里的那些)。不下载、不执行任何东西。
+2. **normalize** —— 各家客户端把同一件事写得不一样(`mcpServers` 还是 `servers`,`url` 还是 `serverUrl`,`type` 有时干脆没有)。这一层把每种文件折成一个 `ServerSpec`,并记住每个字段来自哪个 JSON Pointer。折不进去的东西不会被丢掉,而是变成一条*结构类 finding*:认不出的形态(`MCP000`)、不认识的 capability(`MCP007`)、没有建模的字段(`MCP009`)、重复定义的 server 名(`MCP011`)。
+3. **rules** —— 八条注册规则只读 `ServerSpec`,从不碰原始 JSON;所以规则不会因为没见过某种配置形态而崩。`mcplint rules` 会把全部编号打出来,含结构类那四条。
+4. **policy** —— `mcplint init` 写基线:每个 server 存一个指纹,加上它的权限面(`allowed_tools`、`roots`、`net_egress`、`env_allowlist`、`auto_approve`、`disabled`,以及用于接受既有 finding 的 `waivers`)。env 只存变量名,永不存值。
+5. **diff** —— `mcplint diff` 做结构化比对,不是文本 diff:server 新增或消失、指纹变化、某一维度多一条或少一条。
+6. **report 与退出码** —— 报告负责把 finding 排版,退出码负责给 CI 一个答案。
+
+## 退出码才是产品本身
+
+| 码 | 含义 | 典型原因 |
 | --- | --- | --- |
-| `discover.py` | 显式路径 / 目录递归 / 常见客户端文件名 | 往 `CANDIDATE_NAMES` 加一条 |
-| `normalize.py` | 把 `mcpServers` / `servers` / `mcp.servers` 解析成统一 `ServerSpec` | 加一个 `_parse_*` 分支 |
-| `model.py` | 全部数据类 + `fingerprint()`；唯一的数据契约 | 新字段加 dataclass，不改函数签名 |
-| `rules/__init__.py` | `@register` 注册表 + `evaluate()` | 不动 |
-| `rules/builtin.py` | 内置规则，每条只依赖 `ServerSpec` | 新规则一个函数，good first issue 入口 |
-| `policy.py` | 基线 JSON：fingerprint / allowed_tools / roots / net_egress / env_allowlist / waivers | 新策略维度加字段 + 迁移版本号 |
-| `diff.py` | 结构化 diff，不做 JSON 文本 diff | 新维度加一种 `DiffRow.kind` |
-| `report.py` | 四种渲染器，HTML 自包含 | 新格式加 `render_*` |
-| `cli.py` | 六个子命令，只做编排 | 新子命令加一个 `cmd_*` |
+| 0 | 通过 | 没有要报的 |
+| 1 | 有 finding 未通过 | 某条规则以 `error` 命中(包括 `unknown`,`unknown` 默认按 `error` 计价) |
+| 2 | 策略漂移 | server、权限或指纹与基线不同 |
+| 3 | 用法或配置错误 | 路径不存在、JSON 坏了、策略文件坏了、`--rule` 写了不存在的编号、参数拼错 |
 
-## 核心数据契约
+优先级 `3 > 2 > 1 > 0`:输入坏了压过策略坏了,策略坏了压过发现项。`--strict` 把 `warn` 升级为失败。`--unknown warn|ignore` 是唯一能让「没建模的字段」便宜一点的办法 —— 没有哪个开关能让它在不被说明的情况下凭空消失。
+
+## 每一层向你保证什么
+
+| 阶段 | 你可以依赖 | 它拒绝掩盖的失败 |
+| --- | --- | --- |
+| discover | 不联网、不起子进程 | 你传了但没人读的配置(形态认不出则报 `MCP000`) |
+| normalize | 每条 finding 都带可解析的 JSON Pointer | 类型不对就被静默丢掉的字段(`MCP009`) |
+| rules | 规则永远看不到原始 JSON | 判不了就标 `unknown`,不当作通过 |
+| policy | 只存名字和指纹,不存值 | 会泄漏密钥的基线 |
+| diff | 权限面增加是 error,移除是 warn | 淹没重点的文本 diff |
+| report | HTML 自包含,JSON/NDJSON 可机读 | 需要联网才能渲染的报告 |
+
+## 数据契约
 
 ```python
-ServerSpec(name, command, args, url, env, roots, tools, capabilities, source, pointer)
+ServerSpec(name, command, args, url, url_field, env, roots, tools, capabilities,
+           auto_approve, disabled, unmodeled, source, pointer)
 ToolSpec(name, description, annotations, input_schema, pointer)
-Finding(rule_id, severity, title, message, server, pointer, remediation, threat)
-Policy(version=1, servers={name: {fingerprint, allowed_tools, roots,
-                                  net_egress, env_allowlist, waivers}})
+Finding(rule_id, severity, title, message, server, pointer,
+        remediation, threat, unknown=False)
+Policy(version=1, servers={name: {fingerprint, transport, allowed_tools, roots,
+                                  net_egress, env_allowlist, auto_approve,
+                                  disabled, waivers}})
 DiffRow(kind, server, path, before, after, severity)
 ```
 
-`pointer` 一律是 JSON Pointer（如 `/mcpServers/shell/env`），保证每个结论都能定位到配置原文，这是「可信任」而非「感觉安全」的关键。
+`pointer` 一律是 RFC 6901 JSON Pointer(名为 `a/b` 的 server 会写成 `/mcpServers/a~1b/command`),所以你能用手里任何 JSON Pointer 工具直接定位。
 
-## 三条设计约束（骨架阶段就要守住）
+## 加功能该改哪里
 
-1. **零运行时依赖**：`dependencies = []`，CLI 用 `argparse`，测试用 `unittest`，HTML 手写内联 CSS/JS。任何 extras 都要能证明核心路径不需要它。
-2. **unknown ≠ safe**：解析器不认识的 capability / 字段，标为 `info` 发现项，不静默通过。
-3. **只读**：不执行 server、不 fetch 远程 capability、不写用户配置；唯一写文件动作是 `--out` 指定的报告与基线。
+| 模块 | 职责 | 扩展时的第一站 |
+| --- | --- | --- |
+| `discover.py` | 显式路径、目录递归、已知客户端文件名 | `CANDIDATE_NAMES` |
+| `normalize.py` | 各家形态折成统一 `ServerSpec`;结构类 finding | `FIELD_TYPES`(漏了哪个键,哪个键就变成 `MCP009`) |
+| `model.py` | 全部数据类、`fingerprint()`、pointer 转义 | 加 dataclass 字段,不改函数签名 |
+| `rules/__init__.py` | `@register` 注册表与 `evaluate()` | 不动 |
+| `rules/builtin.py` | 八条内置规则 | 一条规则一个函数,good first issue 的入口 |
+| `policy.py` | 基线 JSON 与指纹 | 新权限维度 + schema 版本号迁移 |
+| `diff.py` | 结构化比对 | 新 `DiffRow.kind` 及其严重级别 |
+| `report.py` | 五种渲染器,HTML 自包含 | 新 `render_*` |
+| `cli.py` | 七个子命令,只做编排 | 新 `cmd_*` |
+| `fixtures/gate` + `scripts/gate_selftest.py` | 退出码契约以数据形式存放 | 新 fixture 及其期望码 |
 
-## 从骨架到 0.1.0 的开工顺序
+## 自骨架起守住的三条约束
 
-1. `python -m mcplint demo` 跑通（本骨架已可跑）
-2. 补齐真实客户端配置样本 → 扩充 `discover.py` / `normalize.py`
-3. 规则从 7 条扩到 15+ 条，每条配 failure fixture + 误报样本
-4. `policy.py` 加 `waivers` 审批语义与 schema 版本迁移
-5. GitHub Action（只调 `scan/check`，零 telemetry）
-6. 5 个 good first issue：新客户端路径 / 新规则 / 策略 schema 迁移 / HTML 无障碍 / 规则测试 fixture
+1. **零运行时依赖**:`dependencies = []`,CLI 用 `argparse`,测试用 `unittest`,HTML 报告手写内联 CSS。任何新增依赖都得先证明核心路径不需要它。
+2. **unknown 不等于安全**:解析器不认识的 capability 或字段会变成 finding,绝不静默通过 —— 自 0.1.0 起它还要付退出码,`--unknown error` 是默认值。`mcplint coverage` 会按文件、按 server 打出「读进去了什么、没读进去什么」。
+3. **只读**:不执行 server、不 fetch 远程 capability、不改你的配置。唯一的写动作是你用 `--out` 指定的报告与基线。
 
 ## 明确不做的层次
 
-运行时隔离、源码恶意检测、网络代理、LLM judge、SaaS、dashboard、自动修复。这些要么已有强项目，要么会破坏「30 秒、零安装摩擦」的产品心智。
+运行时隔离、源码恶意检测、prompt injection 扫描、网络代理、LLM judge、SaaS、dashboard、自动修复。这些要么已有强项目占着(ToolHive、mcp-scanner、agentgateway),要么会破坏这个工具的心智:三十秒上手、零安装摩擦、结论可追溯。

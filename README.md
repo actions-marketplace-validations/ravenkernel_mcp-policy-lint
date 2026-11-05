@@ -1,14 +1,15 @@
 # mcplint
 
-[![ci](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml/badge.svg)](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![ci](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml/badge.svg)](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/ravenkernel/mcplint/blob/main/LICENSE) [![PyPI](https://img.shields.io/pypi/v/mcp-policy-lint.svg)](https://pypi.org/project/mcp-policy-lint/)
 
 **English** | [简体中文](README.zh-CN.md)
 
 Turn `mcp.json` into a readable, testable, PR-blocking permission policy — **before** you run any MCP server. Local, zero dependencies, no model key, no Docker.
 
 ```bash
-pip install -e .              # or: PYTHONPATH=src python -m mcplint ...
+pip install mcp-policy-lint   # the PyPI distribution; the command is mcplint
 mcplint demo                  # 30 seconds, no network, no API key, no Docker
+# from a checkout instead: pip install -e .
 ```
 
 ```
@@ -16,7 +17,7 @@ mcplint demo — 2 servers scanned, 6 findings
 no network, no API key, no Docker
 (vs sample baseline: 3 drift rows — run `mcplint diff` to inspect)
 
-mcplint 0.1.1 — 6 findings
+mcplint 0.1.2 — 6 findings
 
 ERROR  MCP003  remote       /mcpServers/remote/url                 Plaintext HTTP to a remote endpoint
         http://api.example.com/mcp has no TLS, so tool descriptions and responses can be altered in transit
@@ -38,13 +39,12 @@ WARN   MCP006  shell        /mcpServers/shell/tools/0              Tool input ha
         fix: Complete the JSON Schema: declare required fields and enums
 
 exit code: 1
-
-mcplint 0.1.1 coverage — 1 config(s), 2 server(s)
+mcplint 0.1.2 coverage — 1 config(s), 2 server(s)
 
 config           server  transport  modeled                       unmodeled
 ---------------  ------  ---------  ----------------------------  ---------
-unsafe.mcp.json  shell   stdio      command,args,env,roots,tools  -        
-unsafe.mcp.json  remote  remote     url                           -        
+unsafe.mcp.json  shell   stdio      command,args,env,roots,tools  -
+unsafe.mcp.json  remote  remote     url                           -
 
 unmodeled fields: 0 — rules depending on them report unknown, not pass
 unknown findings: 0
@@ -144,11 +144,11 @@ def no_root_ssh(server):
     return []
 ```
 
-The rule registry, policy format, report renderers and config discovery are independent modules — see [ARCHITECTURE.md](ARCHITECTURE.md).
+The rule registry, policy format, report renderers and config discovery are independent modules — see [ARCHITECTURE.md](https://github.com/ravenkernel/mcplint/blob/main/ARCHITECTURE.md).
 
 ## Status
 
-0.1.1: runs end to end, 9 built-in rules (`MCP001-006`, `MCP008`, `MCP009`, `MCP010`), covered by tests at both the CLI and library level. Lint messages are English as of 0.1.1 (0.1.0 shipped the same rules with Chinese messages).
+0.1.2: runs end to end, 9 built-in rules (`MCP001-006`, `MCP008`, `MCP009`, `MCP010`), covered by tests at both the CLI and library level. Lint messages are English as of 0.1.1 (0.1.0 shipped the same rules with Chinese messages). 0.1.2 is the first PyPI release, and it turns the crashes and false positives I found by hand into tests: a field with the wrong type is `MCP009` instead of an exception, a server name containing `/` produces a valid pointer (`a~1b`), two servers with the same name are `MCP011`, `git -c user.name=x` is not read as a shell, and a mistyped `--rule` id or flag exits 3 instead of passing silently.
 
 Config compatibility currently covers three top-level shapes (`mcpServers` / `servers` / `mcp.servers`) and the common fields of Claude Desktop, Cursor, VS Code, Cline and Windsurf. **What is not covered is never reported as a pass**: an unmodeled field always produces `MCP009`, and `--unknown` (error by default) decides whether it blocks the merge; `mcplint coverage` prints the full field-consumption table.
 

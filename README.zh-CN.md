@@ -1,14 +1,15 @@
 # mcplint
 
-[![ci](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml/badge.svg)](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![ci](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml/badge.svg)](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](https://github.com/ravenkernel/mcplint/blob/main/LICENSE) [![PyPI](https://img.shields.io/pypi/v/mcp-policy-lint.svg)](https://pypi.org/project/mcp-policy-lint/)
 
 [English](README.md) | **简体中文**
 
 **在你运行任何 MCP server 之前，把 `mcp.json` 翻译成可读、可测试、可阻止 PR 的权限策略。** 本地、零依赖、无需模型 key、无需 Docker。
 
 ```bash
-pip install -e .              # 或用 PYTHONPATH=src python -m mcplint ...
+pip install mcp-policy-lint   # PyPI 上的发行名，命令仍然是 mcplint
 mcplint demo                  # 30 秒，无网络、无 API key、无 Docker
+# 从源码用：pip install -e .
 ```
 
 ```
@@ -16,7 +17,7 @@ mcplint demo — 2 servers scanned, 6 findings
 no network, no API key, no Docker
 (vs sample baseline: 3 drift rows — run `mcplint diff` to inspect)
 
-mcplint 0.1.1 — 6 findings
+mcplint 0.1.2 — 6 findings
 
 ERROR  MCP003  remote       /mcpServers/remote/url                 Plaintext HTTP to a remote endpoint
         http://api.example.com/mcp has no TLS, so tool descriptions and responses can be altered in transit
@@ -38,8 +39,7 @@ WARN   MCP006  shell        /mcpServers/shell/tools/0              Tool input ha
         fix: Complete the JSON Schema: declare required fields and enums
 
 exit code: 1
-
-mcplint 0.1.1 coverage — 1 config(s), 2 server(s)
+mcplint 0.1.2 coverage — 1 config(s), 2 server(s)
 
 config           server  transport  modeled                       unmodeled
 ---------------  ------  ---------  ----------------------------  ---------
@@ -144,11 +144,11 @@ def no_root_ssh(server):
     return []
 ```
 
-规则注册表、策略格式、报告渲染、配置发现都是独立模块，见 [框架说明.md](ARCHITECTURE.zh-CN.md)。
+规则注册表、策略格式、报告渲染、配置发现都是独立模块，见 [ARCHITECTURE.zh-CN.md](https://github.com/ravenkernel/mcplint/blob/main/ARCHITECTURE.zh-CN.md)。
 
 ## 状态
 
-0.1.1：可运行端到端，内置 9 条规则（MCP001-006 / 008 / 009 / 010），CLI 与库均可测。自 0.1.1 起 lint 输出为英文（0.1.0 规则相同，输出为中文）。
+0.1.2：可运行端到端，内置 9 条规则（MCP001-006 / 008 / 009 / 010），CLI 与库均可测。自 0.1.1 起 lint 输出为英文（0.1.0 规则相同，输出为中文）。0.1.2 是第一个 PyPI 版本，把我手工撞出来的崩溃与误报变成了测试：字段类型不对是 MCP009 而不是异常，名字含 `/` 的 server 产出合法 pointer（`a~1b`），同名 server 报 MCP011，`git -c user.name=x` 不再当作 shell，`--rule` 编号或参数打错是退出码 3 而不是静默通过。
 
 配置格式兼容性目前覆盖 `mcpServers` / `servers` / `mcp.servers` 三种顶层形态，以及 Claude Desktop / Cursor / VS Code / Cline / Windsurf 的常见字段。**没覆盖的部分不会假装通过**：未建模字段一律产出 MCP009，由 `--unknown`（默认 error）决定它是否阻断合并；`mcplint coverage` 打印完整的字段消费表。
 
