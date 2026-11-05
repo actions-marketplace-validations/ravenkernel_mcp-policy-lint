@@ -13,7 +13,7 @@ def _rows(findings, diffs):
     return [f.as_dict() for f in findings] + [
         {"rule_id": "DRIFT", "severity": d.severity, "title": d.kind,
          "message": f"{d.path}: {d.before!r} -> {d.after!r}", "server": d.server,
-         "pointer": d.path, "remediation": "更新基线或撤销该变更", "threat": "policy drift"}
+         "pointer": d.path, "remediation": "Update the baseline or revert the change", "threat": "policy drift"}
         for d in diffs
     ]
 

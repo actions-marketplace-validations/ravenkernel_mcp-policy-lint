@@ -4,12 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mcplint"
-version = "0.1.0"
+version = "0.1.1"
 description = "Read your MCP config before you run the server: zero-dependency policy lint, diff and CI gate."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
-keywords = ["mcp", "linter", "policy", "ci", "static-analysis", "agent"]
+keywords = ["mcp", "model-context-protocol", "mcp-servers", "linter", "policy",
+            "policy-as-code", "ci", "static-analysis", "security", "agent"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: Apache Software License",

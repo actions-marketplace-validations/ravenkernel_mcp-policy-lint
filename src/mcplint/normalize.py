@@ -17,9 +17,9 @@ MODELED_KEYS = frozenset({
 
 # Findings produced here rather than by a registered rule function.
 STRUCTURAL_RULES = {
-    "MCP000": "未识别的配置形态",
-    "MCP007": "未知 capability",
-    "MCP009": "配置字段未被建模",
+    "MCP000": "Unrecognized config shape",
+    "MCP007": "Unknown capability",
+    "MCP009": "Config field not modeled",
 }
 
 KNOWN_CAPABILITIES = frozenset({
@@ -55,10 +55,10 @@ def normalize(data: dict, source: str = "") -> tuple[list[ServerSpec], list[Find
     servers: list[ServerSpec] = []
     notes: list[Finding] = []
     if not block:
-        notes.append(Finding("MCP000", "error", "未识别的配置形态",
-                             "未找到 mcpServers / servers / mcp.servers；本文件的全部字段都未被检查，"
-                             "结论是 unknown，不是 pass",
-                             "<config>", "/", "在 normalize._servers_block 增加该客户端的顶层键",
+        notes.append(Finding("MCP000", "error", "Unrecognized config shape",
+                             "No mcpServers / servers / mcp.servers block found, so nothing in this file was checked: "
+                             "the result is unknown, not pass",
+                             "<config>", "/", "Add this client's top-level key in normalize._servers_block",
                              "unchecked configuration", unknown=True))
         return servers, notes
 
@@ -74,18 +74,18 @@ def normalize(data: dict, source: str = "") -> tuple[list[ServerSpec], list[Find
         approve = raw.get("autoApprove")
         # Unknown capability keys are surfaced, never silently trusted.
         for cap in sorted(set(caps) - KNOWN_CAPABILITIES):
-            notes.append(Finding("MCP007", "warn", "未知 capability",
-                                 f"{name} 声明了未识别的 capability: {cap}",
+            notes.append(Finding("MCP007", "warn", "Unknown capability",
+                                 f"{name} declares an unrecognized capability: {cap}",
                                  str(name), f"{ptr}/capabilities/{cap}",
-                                 "确认客户端是否支持该能力，或删除该声明",
+                                 "Confirm the client supports it, or drop the declaration",
                                  "unchecked capability", unknown=True))
         unmodeled = sorted(set(raw) - MODELED_KEYS)
         if unmodeled:
-            notes.append(Finding("MCP009", "warn", "配置字段未被建模",
-                                 f"{name} 含 {len(unmodeled)} 个未建模字段 "
-                                 f"({', '.join(unmodeled)})；依赖这些字段的规则结论是 unknown，不是 pass",
+            notes.append(Finding("MCP009", "warn", "Config field not modeled",
+                                 f"{name} has {len(unmodeled)} unmodeled field(s) "
+                                 f"({", ".join(unmodeled)}); rules that depend on them report unknown, not pass",
                                  str(name), ptr,
-                                 "在 normalize.MODELED_KEYS 中建模该字段，或显式用 --unknown 声明容忍",
+                                 "Model the field in normalize.MODELED_KEYS, or tolerate it explicitly with --unknown",
                                  "unchecked permission surface", unknown=True))
         url_key = "url" if raw.get("url") else ("serverUrl" if raw.get("serverUrl") else "url")
         servers.append(ServerSpec(

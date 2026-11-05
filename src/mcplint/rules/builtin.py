@@ -23,9 +23,9 @@ def _f(rule_id, sev, title, msg, s: ServerSpec, ptr, fix, threat="") -> Finding:
 def shell_command(s: ServerSpec) -> list[Finding]:
     cmd = (s.command or "").strip()
     if cmd in SHELLS or "-c" in s.args or "/c" in s.args:
-        return [_f("MCP001", "error", "stdio 命令可启动 shell",
-                   f"{s.name} 使用 {cmd or '?'} 执行参数，可运行任意命令", s,
-                   f"{s.pointer}/command", "改为直接调用具体可执行文件，避免 -c 拼装",
+        return [_f("MCP001", "error", "stdio command can start a shell",
+                   f"{s.name} runs its arguments through {cmd or '?'}, so it can execute arbitrary commands", s,
+                   f"{s.pointer}/command", "Call a concrete executable directly instead of assembling a command with -c",
                    "arbitrary command execution")]
     return []
 
@@ -35,9 +35,9 @@ def sensitive_env(s: ServerSpec) -> list[Finding]:
     out = []
     for k, v in s.env.items():
         if SENSITIVE_ENV.search(k) and not PLACEHOLDER.match(v.strip()):
-            out.append(_f("MCP002", "error", "配置内疑似真实凭证",
-                          f"{k} 不是占位符，可能被写入日志或随仓库泄露", s,
-                          f"{s.pointer}/env/{k}", "改用环境变量引用或密钥管理，不要把值写进 mcp.json",
+            out.append(_f("MCP002", "error", "Likely real credential in config",
+                          f"{k} is not a placeholder; it can leak through logs or travel with the repository", s,
+                          f"{s.pointer}/env/{k}", "Reference an environment variable or a secret manager; never put the value in mcp.json",
                           "credential leakage"))
     return out
 
@@ -48,13 +48,13 @@ def plaintext_remote(s: ServerSpec) -> list[Finding]:
         return []
     host = (urlparse(s.url).hostname or "").lower()
     if host in LOOPBACK:
-        return [_f("MCP003", "warn", "回环地址使用明文 HTTP",
-                   f"{s.url} 只在本机可访问，但仍是明文；跨主机或隧道转发则不可接受", s,
-                   f"{s.pointer}/{s.url_field}", "本地开发可接受；一旦转发端口或部署到其他主机必须改 https",
+        return [_f("MCP003", "warn", "Plaintext HTTP to a loopback address",
+                   f"{s.url} is reachable only from this host, but it is still plaintext; forwarding the port or tunnelling makes it unacceptable", s,
+                   f"{s.pointer}/{s.url_field}", "Acceptable for local development; switch to https as soon as the port is forwarded or the server moves",
                    "local plaintext transport")]
-    return [_f("MCP003", "error", "远程端点使用明文 HTTP",
-               f"{s.url} 未启用 TLS，工具描述与返回值可被中间人篡改", s,
-               f"{s.pointer}/{s.url_field}", "改用 https://，并确认鉴权配置",
+    return [_f("MCP003", "error", "Plaintext HTTP to a remote endpoint",
+               f"{s.url} has no TLS, so tool descriptions and responses can be altered in transit", s,
+               f"{s.pointer}/{s.url_field}", "Use https:// and confirm the authentication settings",
                "transport tampering")]
 
 
@@ -63,9 +63,9 @@ def roots_outside_repo(s: ServerSpec) -> list[Finding]:
     out = []
     for i, r in enumerate(s.roots):
         if HOME_PATH.match(r) or r.strip() in {"/", "C:\\"} or ".." in r:
-            out.append(_f("MCP004", "error", "root 越出仓库边界",
-                          f"root {r} 指向用户主目录或路径逃逸", s,
-                          f"{s.pointer}/roots/{i}", "把 roots 收窄到当前项目目录",
+            out.append(_f("MCP004", "error", "root outside the repository boundary",
+                          f"root {r} points at a home directory or escapes the repository", s,
+                          f"{s.pointer}/roots/{i}", "Narrow roots to the current project directory",
                           "unbounded file access"))
     return out
 
@@ -78,9 +78,9 @@ def annotation_conflict(s: ServerSpec) -> list[Finding]:
         destruct = t.annotations.get("destructiveHint") is False
         text = f"{t.name} {t.description}"
         if (readonly or destruct) and WRITE_WORDS.search(text):
-            out.append(_f("MCP005", "warn", "工具注解与名称/描述矛盾",
-                          f"{t.name} 声明只读/非破坏性，但描述包含写操作词", s,
-                          t.pointer, "修正注解或改名；客户端可能据此跳过二次确认",
+            out.append(_f("MCP005", "warn", "Tool annotation contradicts its name or description",
+                          f"{t.name} claims read-only or non-destructive, but its description contains write verbs", s,
+                          t.pointer, "Fix the annotation or the name; a client may skip confirmation because of it",
                           "consent bypass"))
     return out
 
@@ -91,9 +91,9 @@ def empty_schema(s: ServerSpec) -> list[Finding]:
     for t in s.tools:
         schema = t.input_schema
         if not schema or not schema.get("type") or not schema.get("properties"):
-            out.append(_f("MCP006", "warn", "工具入参无约束",
-                          f"{t.name} 的 inputSchema 为空或缺少 properties，参数边界不可检查", s,
-                          t.pointer, "补全 JSON Schema，声明必填字段与枚举",
+            out.append(_f("MCP006", "warn", "Tool input has no constraints",
+                          f"{t.name} has an empty inputSchema or no properties, so argument boundaries cannot be checked", s,
+                          t.pointer, "Complete the JSON Schema: declare required fields and enums",
                           "unbounded input"))
     return out
 
@@ -101,9 +101,9 @@ def empty_schema(s: ServerSpec) -> list[Finding]:
 @register("MCP008")
 def undeclared_transport(s: ServerSpec) -> list[Finding]:
     if s.transport == "unknown":
-        return [Finding("MCP008", "warn", "未声明 transport",
-                        f"{s.name} 既无 command 也无 url，无法推断权限边界", s.name,
-                        s.pointer, "补充 command 或 url；unknown 不等于 safe",
+        return [Finding("MCP008", "warn", "Transport not declared",
+                        f"{s.name} has neither command nor url, so its permission surface cannot be inferred", s.name,
+                        s.pointer, "Add command or url; unknown does not mean safe",
                         "undetermined permission surface", unknown=True)]
     return []
 
@@ -112,10 +112,10 @@ def undeclared_transport(s: ServerSpec) -> list[Finding]:
 def pre_approved_tools(s: ServerSpec) -> list[Finding]:
     if s.auto_approve:
         listed = ", ".join(sorted(s.auto_approve))
-        return [_f("MCP010", "warn", "预批准工具跳过二次确认",
-                   f"{s.name} 对 {len(s.auto_approve)} 个工具免确认（{listed}）；"
-                   "该清单已进入基线，新增一项会触发漂移", s,
+        return [_f("MCP010", "warn", "Pre-approved tools skip confirmation",
+                   f"{s.name} auto-approves {len(s.auto_approve)} tool(s): {listed}. "
+                   "That list is part of the baseline, so adding one triggers drift", s,
                    f"{s.pointer}/autoApprove",
-                   "只保留确实需要免确认的只读工具；其余移出清单",
+                   "Keep only read-only tools that genuinely need auto-approval; move the rest out of the list",
                    "consent bypass")]
     return []
