@@ -56,6 +56,33 @@ mcplint coverage mcp.json               # 本次到底消费了哪些字段
 
 `coverage` 是唯一会主动承认自己没看懂什么的命令：它列出每个 server 已建模的字段、未建模的字段，以及由此产生的 unknown 结论。
 
+## 自己验证，不用信我
+
+`scripts/gate_selftest.py` 把「什么输入该拿什么退出码」写成了表，10 个 fixture + 1 个漂移用例，零依赖、不需要安装：
+
+```bash
+python scripts/gate_selftest.py
+```
+
+```
+fixture                         argv                         want  got
+safe.json                       (default)                       0    0  ok
+unknown-shape.json              (default)                       1    1  ok
+unmodeled-transport.json        (default)                       1    1  ok
+unmodeled-transport.json        --unknown warn                  0    0  ok
+unmodeled-transport.json        --unknown ignore                0    0  ok
+windsurf-serverurl-http.json    (default)                       1    1  ok
+cline-autoapprove.json          (default)                       0    0  ok
+cline-autoapprove.json          --strict                        1    1  ok
+cline-autoapprove-secret.json   (default)                       1    1  ok
+localhost-http.json             (default)                       0    0  ok
+cline-autoapprove-plus.json     (drift)                         2    2  ok
+
+11/11 cases match
+```
+
+这张表就是本文档的全部主张：看不懂的配置会失败（1），基线能被漂移检测抓到（2），本地明文 HTTP 不误报（0）。改任何一条规则的严重级别，这张表会先红。
+
 ## 它不是什么
 
 | 不做 | 谁在做 |

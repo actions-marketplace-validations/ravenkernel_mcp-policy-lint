@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "c": {
+      "command": "npx",
+      "autoApprove": [
+        "delete_everything",
+        "read_anything"
+      ]
+    }
+  }
+}

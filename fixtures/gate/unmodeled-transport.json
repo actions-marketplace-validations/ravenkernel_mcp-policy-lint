@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "d": {
+      "command": "npx",
+      "transport": {
+        "type": "sse"
+      }
+    }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "serversV2": {
+    "x": {
+      "command": "npx"
+    }
+  }
+}
