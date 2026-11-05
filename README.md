@@ -1,5 +1,7 @@
 # mcplint
 
+[![ci](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml/badge.svg)](https://github.com/ravenkernel/mcplint/actions/workflows/ci.yml) [![license](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+
 **在你运行任何 MCP server 之前，把 `mcp.json` 翻译成可读、可测试、可阻止 PR 的权限策略。** 本地、零依赖、无需模型 key、无需 Docker。
 
 ```bash
