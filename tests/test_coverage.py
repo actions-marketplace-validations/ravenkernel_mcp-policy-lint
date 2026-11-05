@@ -79,6 +79,12 @@ class CoverageTests(unittest.TestCase):
         approved = Policy(version=1, servers={"c": dict(live, auto_approve=[])})
         self.assertTrue(any(r.kind == "auto_approve_added" for r in diff(servers, approved)))
 
+    def test_rules_lists_the_normalize_channel(self):
+        with contextlib.redirect_stdout(io.StringIO()) as buf:
+            self.assertEqual(cli.main(["rules"]), exitcode.OK)
+        ids = {line.split()[0] for line in buf.getvalue().splitlines() if line.strip()}
+        self.assertLessEqual({"MCP000", "MCP007", "MCP009", "MCP010"}, ids)
+
     def test_coverage_table_names_what_was_not_consumed(self):
         p = self.write("d.json", {"mcpServers": {"d": {"command": "npx",
                                                        "transport": {"type": "sse"}}}})

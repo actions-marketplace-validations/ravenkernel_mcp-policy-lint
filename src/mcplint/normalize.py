@@ -15,6 +15,13 @@ MODELED_KEYS = frozenset({
     "capabilities", "autoApprove", "disabled",
 })
 
+# Findings produced here rather than by a registered rule function.
+STRUCTURAL_RULES = {
+    "MCP000": "未识别的配置形态",
+    "MCP007": "未知 capability",
+    "MCP009": "配置字段未被建模",
+}
+
 KNOWN_CAPABILITIES = frozenset({
     "tools", "resources", "prompts", "logging", "sampling", "roots", "elicitation",
 })

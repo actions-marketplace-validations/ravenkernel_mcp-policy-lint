@@ -11,7 +11,7 @@ from . import __version__, exitcode
 from .discover import discover
 from .diff import diff
 from .model import Policy
-from .normalize import from_paths, normalize
+from .normalize import STRUCTURAL_RULES, from_paths, normalize
 from .policy import build_policy, load_policy
 from .report import render_coverage, render_html, render_json, render_ndjson, render_text
 from .rules import REGISTRY, evaluate
@@ -99,6 +99,8 @@ def cmd_coverage(args):
 
 
 def cmd_rules(args):
+    for rid, title in sorted(STRUCTURAL_RULES.items()):
+        print(f"{rid}  {title}  (normalize)")
     for rid, fn in sorted(REGISTRY.items()):
         print(f"{rid}  {fn.__doc__.strip().splitlines()[0] if fn.__doc__ else fn.__name__}")
     return exitcode.OK
