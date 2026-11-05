@@ -4,10 +4,12 @@ from __future__ import annotations
 import re
 from urllib.parse import urlparse
 
-from ..model import Finding, ServerSpec
+from ..model import Finding, ServerSpec, escape_pointer
 from . import register
 
 SHELLS = {"sh", "bash", "zsh", "dash", "cmd", "cmd.exe", "powershell", "pwsh"}
+# What makes an argument after -c a command string rather than a plain value.
+SHELL_META = re.compile(r"[;&|$\x60<>(){}\n]")
 SENSITIVE_ENV = re.compile(r"(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|PRIVATE_?KEY|CREDENTIAL)", re.I)
 PLACEHOLDER = re.compile(r"^(\$\{?\w+\}?|<[^>]+>|xxx+|placeholder|changeme|your[_-]?\w*)$", re.I)
 WRITE_WORDS = re.compile(r"(delete|remove|rm\b|drop|overwrite|write|create|update|send|publish|execute)", re.I)
@@ -19,10 +21,22 @@ def _f(rule_id, sev, title, msg, s: ServerSpec, ptr, fix, threat="") -> Finding:
     return Finding(rule_id, sev, title, msg, s.name, ptr or s.pointer, fix, threat)
 
 
+def _carries_command(args: list[str]) -> bool:
+    """-c only matters when the next argument is itself a command string.
+
+    Without this, every `git -c key=value`, `docker run -c 512` and
+    `npx pkg -c` becomes a false alarm, and a noisy gate gets deleted, not fixed.
+    """
+    for i, arg in enumerate(args[:-1]):
+        if arg in ("-c", "/c") and SHELL_META.search(args[i + 1]):
+            return True
+    return False
+
+
 @register("MCP001")
 def shell_command(s: ServerSpec) -> list[Finding]:
     cmd = (s.command or "").strip()
-    if cmd in SHELLS or "-c" in s.args or "/c" in s.args:
+    if cmd in SHELLS or _carries_command(s.args):
         return [_f("MCP001", "error", "stdio command can start a shell",
                    f"{s.name} runs its arguments through {cmd or '?'}, so it can execute arbitrary commands", s,
                    f"{s.pointer}/command", "Call a concrete executable directly instead of assembling a command with -c",
@@ -37,7 +51,7 @@ def sensitive_env(s: ServerSpec) -> list[Finding]:
         if SENSITIVE_ENV.search(k) and not PLACEHOLDER.match(v.strip()):
             out.append(_f("MCP002", "error", "Likely real credential in config",
                           f"{k} is not a placeholder; it can leak through logs or travel with the repository", s,
-                          f"{s.pointer}/env/{k}", "Reference an environment variable or a secret manager; never put the value in mcp.json",
+                          f"{s.pointer}/env/{escape_pointer(k)}", "Reference an environment variable or a secret manager; never put the value in mcp.json",
                           "credential leakage"))
     return out
 
@@ -62,7 +76,8 @@ def plaintext_remote(s: ServerSpec) -> list[Finding]:
 def roots_outside_repo(s: ServerSpec) -> list[Finding]:
     out = []
     for i, r in enumerate(s.roots):
-        if HOME_PATH.match(r) or r.strip() in {"/", "C:\\"} or ".." in r:
+        segments = r.replace("\\", "/").split("/")
+        if HOME_PATH.match(r) or r.strip() in {"/", "C:\\"} or ".." in segments:
             out.append(_f("MCP004", "error", "root outside the repository boundary",
                           f"root {r} points at a home directory or escapes the repository", s,
                           f"{s.pointer}/roots/{i}", "Narrow roots to the current project directory",
@@ -90,7 +105,10 @@ def empty_schema(s: ServerSpec) -> list[Finding]:
     out = []
     for t in s.tools:
         schema = t.input_schema
-        if not schema or not schema.get("type") or not schema.get("properties"):
+        # JSON Schema does not require "type"; constraints are what make input checkable.
+        constrained = bool(schema.get("properties") or schema.get("required")
+                           or schema.get("additionalProperties") is False)
+        if not constrained:
             out.append(_f("MCP006", "warn", "Tool input has no constraints",
                           f"{t.name} has an empty inputSchema or no properties, so argument boundaries cannot be checked", s,
                           t.pointer, "Complete the JSON Schema: declare required fields and enums",

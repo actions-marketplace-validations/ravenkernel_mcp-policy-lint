@@ -11,7 +11,7 @@ USAGE = 3
 MEANING = {
     OK: "pass",
     FINDINGS: "findings failed",
-    DRIFT: "policy drift / incompatible schema",
+    DRIFT: "policy drift",
     USAGE: "usage or config error",
 }
 

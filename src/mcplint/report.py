@@ -46,7 +46,7 @@ def render_coverage(files, servers, findings) -> str:
     widths = [max(len(str(r[i])) for r in rows) for i in range(5)]
     out = [f"mcplint {__version__} coverage — {len(files)} config(s), {len(servers)} server(s)", ""]
     for i, row in enumerate(rows):
-        out.append("  ".join(str(c).ljust(w) for c, w in zip(row, widths)))
+        out.append("  ".join(str(c).ljust(w) for c, w in zip(row, widths)).rstrip())
         if i == 0:
             out.append("  ".join("-" * w for w in widths))
     total = sum(len(s.unmodeled) for s in servers)
@@ -97,7 +97,7 @@ def render_html(findings, diffs, exit_code: int) -> str:
             f'<td>{html.escape(r["title"])}<br><small>{html.escape(r["message"])}</small></td>'
             f'<td>{html.escape(r.get("remediation", ""))}</td></tr>')
     return (
-        "<!doctype html><html lang=\"zh\"><meta charset=\"utf-8\">"
+        "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         f"<title>mcplint report</title><style>{_CSS}</style>"
         f"<h1>mcplint {__version__} — exit code {exit_code}</h1>"

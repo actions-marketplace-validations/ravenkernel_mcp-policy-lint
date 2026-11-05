@@ -30,7 +30,7 @@ def discover(paths: list[str]) -> list[Path]:
                 if candidate.is_file():
                     found.append(candidate)
             for child in sorted(p.rglob("*.json")):
-                if any(part in SKIP_DIRS for part in child.parts):
+                if any(part in SKIP_DIRS for part in child.relative_to(p).parts):
                     continue
                 if child.name in {"mcp.json", ".mcp.json", "claude_desktop_config.json"}:
                     if child not in found:
@@ -47,7 +47,7 @@ def discover(paths: list[str]) -> list[Path]:
 
 def load_config(path: Path) -> dict:
     """JSON only in the skeleton. JSON5/JSONC support belongs in normalize."""
-    with path.open("r", encoding="utf-8") as fh:
+    with path.open("r", encoding="utf-8-sig") as fh:
         data = json.load(fh)
     if not isinstance(data, dict):
         raise ValueError(f"{path}: top-level must be an object")

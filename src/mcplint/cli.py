@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 import tempfile
 from pathlib import Path
@@ -30,6 +29,10 @@ _ORDER = {"error": 0, "warn": 1, "info": 2}
 
 
 def _findings(servers, notes, only):
+    if only:
+        unknown = sorted(set(only) - set(REGISTRY) - set(STRUCTURAL_RULES))
+        if unknown:
+            raise ValueError("unknown rule id: " + ", ".join(unknown))
     return notes + evaluate(servers, enabled=set(only) if only else None)
 
 
@@ -128,8 +131,17 @@ def cmd_demo(args):
     return code
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse exits 2 on a typo; in this contract 2 means policy drift. Ours is 3."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"mcplint: {message}", file=sys.stderr)
+        sys.exit(exitcode.USAGE)
+
+
 def build_parser():
-    p = argparse.ArgumentParser(prog="mcplint", description=__doc__)
+    p = _Parser(prog="mcplint", description=__doc__)
     p.add_argument("--version", action="version", version=f"mcplint {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -178,6 +190,6 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return int(args.func(args))
-    except (FileNotFoundError, ValueError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError) as exc:   # bad path, bad JSON, bad policy all mean "fix your input"
         print(f"mcplint: {exc}", file=sys.stderr)
         return exitcode.USAGE

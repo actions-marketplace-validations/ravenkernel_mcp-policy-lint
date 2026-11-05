@@ -20,6 +20,15 @@ def stable_hash(obj: Any) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
 
 
+def escape_pointer(token: Any) -> str:
+    """RFC 6901: ~ becomes ~0 and / becomes ~1, so a pointer stays unambiguous."""
+    return str(token).replace("~", "~0").replace("/", "~1")
+
+
+def unescape_pointer(token: str) -> str:
+    return token.replace("~1", "/").replace("~0", "~")
+
+
 @dataclass
 class ToolSpec:
     name: str
