@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcplint"
+version = "0.1.0"
+description = "Read your MCP config before you run the server: zero-dependency policy lint, diff and CI gate."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+keywords = ["mcp", "linter", "policy", "ci", "static-analysis", "agent"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Topic :: Security",
+  "Topic :: Software Development :: Quality Assurance",
+]
+# The whole point: zero runtime dependencies.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+mcplint = "mcplint.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/ravenkernel/mcplint"
+Issues = "https://github.com/ravenkernel/mcplint/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "files": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/workspace/repo"],
+      "env": {},
+      "roots": ["/workspace/repo"],
+      "tools": [
+        {
+          "name": "read_file",
+          "description": "Read a UTF-8 text file from the allowed roots",
+          "readOnlyHint": true,
+          "destructiveHint": false,
+          "inputSchema": {
+            "type": "object",
+            "properties": { "path": { "type": "string" } },
+            "required": ["path"]
+          }
+        }
+      ]
+    }
+  }
+}
