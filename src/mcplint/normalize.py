@@ -83,7 +83,7 @@ def normalize(data: dict, source: str = "") -> tuple[list[ServerSpec], list[Find
         if unmodeled:
             notes.append(Finding("MCP009", "warn", "Config field not modeled",
                                  f"{name} has {len(unmodeled)} unmodeled field(s) "
-                                 f"({", ".join(unmodeled)}); rules that depend on them report unknown, not pass",
+                                 f"({', '.join(unmodeled)}); rules that depend on them report unknown, not pass",
                                  str(name), ptr,
                                  "Model the field in normalize.MODELED_KEYS, or tolerate it explicitly with --unknown",
                                  "unchecked permission surface", unknown=True))
