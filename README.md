@@ -146,6 +146,28 @@ def no_root_ssh(server):
 
 The rule registry, policy format, report renderers and config discovery are independent modules — see [ARCHITECTURE.md](https://github.com/ravenkernel/mcplint/blob/main/ARCHITECTURE.md).
 
+## Use it as a GitHub Action
+
+```yaml
+- uses: ravenkernel/mcplint@v1
+  with:
+    path: .                       # file or directory
+    baseline: policy.lock.json    # optional; omit to only report findings
+    unknown: error                # error (default) | warn | ignore
+    strict: false
+```
+
+The action installs `mcp-policy-lint`, runs `mcplint check`, and fails the job with mcplint own exit code — the same `0/1/2/3` you see locally. It writes nothing but the baseline you ask for, and it never edits a config file.
+
+| input | default | effect |
+|---|---|---|
+| `path` | `.` | config file or directory to check |
+| `baseline` | empty | turns on drift detection against `policy.lock.json` |
+| `unknown` | `error` | price of a field mcplint cannot model |
+| `strict` | `false` | warnings become failures |
+| `extra-args` | empty | appended to `mcplint check` |
+| `version` | `>=0.1.2,<0.2` | pip requirement for the package |
+
 ## Status
 
 0.1.2: runs end to end, 9 built-in rules (`MCP001-006`, `MCP008`, `MCP009`, `MCP010`), covered by tests at both the CLI and library level. Lint messages are English as of 0.1.1 (0.1.0 shipped the same rules with Chinese messages). 0.1.2 is the first PyPI release, and it turns the crashes and false positives I found by hand into tests: a field with the wrong type is `MCP009` instead of an exception, a server name containing `/` produces a valid pointer (`a~1b`), two servers with the same name are `MCP011`, `git -c user.name=x` is not read as a shell, and a mistyped `--rule` id or flag exits 3 instead of passing silently.

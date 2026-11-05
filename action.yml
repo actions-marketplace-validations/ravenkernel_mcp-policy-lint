@@ -1,0 +1,62 @@
+name: mcplint
+description: Fail the pull request when MCP config gains a server, a permission, or a field mcplint cannot read.
+author: ravenkernel
+branding:
+  icon: shield
+  color: purple
+
+inputs:
+  path:
+    description: Config file or directory to check.
+    required: false
+    default: .
+  baseline:
+    description: Path to policy.lock.json. Empty means findings only, no drift check.
+    required: false
+    default: ''
+  unknown:
+    description: What a field mcplint cannot model costs. One of error, warn, ignore.
+    required: false
+    default: error
+  strict:
+    description: Treat warnings as failures (true or false).
+    required: false
+    default: 'false'
+  extra-args:
+    description: Extra arguments appended to mcplint check.
+    required: false
+    default: ''
+  version:
+    description: Version requirement for the mcp-policy-lint package.
+    required: false
+    default: '>=0.1.2,<0.2'
+
+outputs:
+  exit-code:
+    description: The exit code mcplint returned.
+    value: ${{ steps.check.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install mcplint
+      shell: bash
+      run: python -m pip install --disable-pip-version-check --quiet "mcp-policy-lint${{ inputs.version }}"
+    - name: mcplint check
+      id: check
+      shell: bash
+      env:
+        MC_PATH: ${{ inputs.path }}
+        MC_BASELINE: ${{ inputs.baseline }}
+        MC_UNKNOWN: ${{ inputs.unknown }}
+        MC_STRICT: ${{ inputs.strict }}
+        MC_EXTRA: ${{ inputs.extra-args }}
+      run: |
+        set -euo pipefail
+        argv=(--unknown "$MC_UNKNOWN")
+        if [ -n "$MC_BASELINE" ]; then argv+=(--baseline "$MC_BASELINE"); fi
+        if [ "$MC_STRICT" = "true" ]; then argv+=(--strict); fi
+        code=0
+        mcplint check $MC_PATH "${argv[@]}" $MC_EXTRA || code=$?
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        exit $code

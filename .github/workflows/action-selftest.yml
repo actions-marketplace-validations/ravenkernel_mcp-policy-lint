@@ -1,0 +1,35 @@
+name: action
+
+on:
+  push:
+    branches: [main]
+    paths: [action.yml, .github/workflows/action-selftest.yml]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - fixture: fixtures/gate/safe.json
+            expect: success
+          - fixture: fixtures/gate/unknown-shape.json
+            expect: failure
+          - fixture: fixtures/gate/windsurf-serverurl-http.json
+            expect: failure
+          - fixture: fixtures/gate/cline-autoapprove.json
+            expect: success
+    steps:
+      - uses: actions/checkout@v4
+      - id: gate
+        continue-on-error: true
+        uses: ./
+        with:
+          path: ${{ matrix.fixture }}
+      - name: Compare the outcome
+        run: |
+          echo "expected ${{ matrix.expect }}, got ${{ steps.gate.outcome }}"
+          test "${{ steps.gate.outcome }}" = "${{ matrix.expect }}"

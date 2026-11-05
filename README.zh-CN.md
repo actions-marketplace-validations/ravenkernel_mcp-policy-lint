@@ -146,6 +146,28 @@ def no_root_ssh(server):
 
 规则注册表、策略格式、报告渲染、配置发现都是独立模块，见 [ARCHITECTURE.zh-CN.md](https://github.com/ravenkernel/mcplint/blob/main/ARCHITECTURE.zh-CN.md)。
 
+## 作为 GitHub Action 使用
+
+```yaml
+- uses: ravenkernel/mcplint@v1
+  with:
+    path: .                       # 文件或目录
+    baseline: policy.lock.json    # 可选；不填时只报 findings
+    unknown: error                # error（默认）| warn | ignore
+    strict: false
+```
+
+Action 会安装 `mcp-policy-lint`、运行 `mcplint check`，并用 mcplint 自己的退出码决定这个 job 通过还是失败——和你在本地看到的 `0/1/2/3` 完全一致。除了你要它写出的基线文件，它不写任何东西，也从不改配置文件。
+
+| 输入 | 默认 | 作用 |
+|---|---|---|
+| `path` | `.` | 要检查的配置文件或目录 |
+| `baseline` | 空 | 开启针对 `policy.lock.json` 的漂移检测 |
+| `unknown` | `error` | 无法建模的字段要付的代价 |
+| `strict` | `false` | 警告升级为失败 |
+| `extra-args` | 空 | 追加到 `mcplint check` 后面 |
+| `version` | `>=0.1.2,<0.2` | 安装时的 pip 版本要求 |
+
 ## 状态
 
 0.1.2：可运行端到端，内置 9 条规则（MCP001-006 / 008 / 009 / 010），CLI 与库均可测。自 0.1.1 起 lint 输出为英文（0.1.0 规则相同，输出为中文）。0.1.2 是第一个 PyPI 版本，把我手工撞出来的崩溃与误报变成了测试：字段类型不对是 MCP009 而不是异常，名字含 `/` 的 server 产出合法 pointer（`a~1b`），同名 server 报 MCP011，`git -c user.name=x` 不再当作 shell，`--rule` 编号或参数打错是退出码 3 而不是静默通过。
