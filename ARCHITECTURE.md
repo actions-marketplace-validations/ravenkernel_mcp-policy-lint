@@ -17,7 +17,8 @@ mcp-policy-lint scan .            discover   which files are read
                           rules      ServerSpec -> [Finding]
 mcp-policy-lint diff / check      policy     baseline: what was approved, and its fingerprint
                           diff       current permission surface vs approved one
-mcp-policy-lint coverage          report     text / ndjson / json / single-file HTML
+mcp-policy-lint approve           review     the only writer of a baseline, and it records the reason
+mcp-policy-lint coverage          report     text / ndjson / json / sarif / single-file HTML
 -- exit --                exitcode   findings + drift + --strict -> 0 / 1 / 2 / 3
 ```
 
@@ -42,8 +43,14 @@ mcp-policy-lint coverage          report     text / ndjson / json / single-file 
 5. **diff** — `mcp-policy-lint diff` compares the current surface against the baseline
    structurally, never as a text diff. A server appears or disappears, the fingerprint
    changes, or one dimension gains or loses an entry.
-6. **report and exit code** — the report formats the findings; the exit code decides for
-   CI.
+6. **approve** — when drift is intentional, `mcp-policy-lint approve --reason "..."`
+   rewrites the baseline and appends an audit entry (`id`, `at`, `by`, `reason`,
+   `changes`) to it. The next `check` passes, and the reviewer sees who moved the
+   baseline and why in the same diff as the config change.
+7. **report and exit code** — the report formats the findings (`text`, `json`, `ndjson`,
+   `sarif`, HTML); a SARIF result carries the rule id, the mapped level, the config file,
+   the JSON Pointer as a `logicalLocation`, and a stable `partialFingerprint`. The exit code
+   decides for CI.
 
 ## The exit code is the product
 
@@ -80,7 +87,7 @@ Finding(rule_id, severity, title, message, server, pointer,
         remediation, threat, unknown=False)
 Policy(version=1, servers={name: {fingerprint, transport, allowed_tools, roots,
                                   net_egress, env_allowlist, auto_approve,
-                                  disabled, waivers}})
+                                  disabled, waivers}}, approvals=[...])
 DiffRow(kind, server, path, before, after, severity)
 ```
 
@@ -98,8 +105,9 @@ named `a/b`), so a finding resolves with any JSON Pointer tool you already have.
 | `rules/builtin.py` | the eight built-in rules | one function per rule, the good-first-issue surface |
 | `policy.py` | baseline JSON and fingerprints | a new permission dimension plus a schema version bump |
 | `diff.py` | structural comparison | a new `DiffRow.kind` and its severity |
-| `report.py` | five renderers, self-contained HTML | a new `render_*` |
-| `cli.py` | seven subcommands, orchestration only | a new `cmd_*` |
+| `review.py` | explicit approval: reason required, receipt appended | what an approval entry records |
+| `report.py` | six renderers, including SARIF 2.1.0, self-contained HTML | a new `render_*` |
+| `cli.py` | eight subcommands, orchestration only | a new `cmd_*` |
 | `fixtures/gate` + `scripts/gate_selftest.py` | the exit-code contract as data | a new fixture with its expected code |
 
 ## Three constraints held since the skeleton
@@ -112,7 +120,8 @@ named `a/b`), so a finding resolves with any JSON Pointer tool you already have.
    `--unknown error` as the default. `mcp-policy-lint coverage` prints what was consumed and what
    was not, per file and per server.
 3. **Read-only**: never executes a server, never fetches remote capabilities, never edits
-   your config. The only writes are the report and the baseline you name with `--out`.
+   your config. The only writes are the report and the baseline you name with `--out`,
+   and a baseline only moves through `approve --reason`, which leaves a receipt.
 
 ## Deliberately out of scope
 

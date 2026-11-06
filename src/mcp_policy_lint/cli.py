@@ -12,7 +12,9 @@ from .diff import diff
 from .model import Policy
 from .normalize import STRUCTURAL_RULES, from_paths, normalize
 from .policy import build_policy, load_policy
-from .report import render_coverage, render_html, render_json, render_ndjson, render_text
+from .review import approve
+from .report import (render_coverage, render_html, render_json, render_ndjson, render_sarif,
+                     render_text)
 from .rules import REGISTRY, evaluate
 from .samples import SAFE_MCP, UNSAFE_MCP
 
@@ -50,18 +52,30 @@ def _emit(text, out=None):
         sys.stdout.write(text)
 
 
+def _render(args, findings, rows, code, servers):
+    """Map a --format name to a renderer, plus the file it must land in (None = stdout)."""
+    fmt = getattr(args, "format", "text")
+    if fmt == "text":
+        return render_text(findings, rows, code), None
+    if fmt == "ndjson":
+        return render_ndjson(findings, rows), None
+    if fmt == "json":
+        return render_json(findings, rows, code, servers), None
+    if fmt == "sarif":
+        return render_sarif(findings, rows, code, servers), None
+    return render_html(findings, rows, code), getattr(args, "html_out", None) or "report.html"
+
+
+def _render_to(args, findings, rows, code, servers):
+    body, dest = _render(args, findings, rows, code, servers)
+    _emit(body, getattr(args, "out", None) or dest)
+
+
 def cmd_scan(args):
     _, servers, notes = _collect(args.path)
     findings = _resolved(servers, notes, args.rule, args.unknown)
     code = exitcode.decide(findings, [], args.strict)
-    if args.format == "text":
-        _emit(render_text(findings, [], code))
-    elif args.format == "ndjson":
-        _emit(render_ndjson(findings, []))
-    elif args.format == "json":
-        _emit(render_json(findings, [], code))
-    else:
-        _emit(render_html(findings, [], code), args.html_out or "report.html")
+    _render_to(args, findings, [], code, servers)
     return code
 
 
@@ -90,8 +104,26 @@ def cmd_check(args):
         base = load_policy(Path(args.baseline).read_text(encoding="utf-8"))
         rows = diff(servers, base)
     code = exitcode.decide(findings, rows, args.strict)
-    _emit(render_text(findings, rows, code))
+    _render_to(args, findings, rows, code, servers)
     return code
+
+
+def cmd_approve(args):
+    _, servers, _ = _collect(args.path)
+    base = load_policy(Path(args.baseline).read_text(encoding="utf-8"))
+    updated, rows = approve(servers, base, args.reason, args.by)
+    if not rows:
+        print(f"nothing to approve: the config already matches {args.baseline}")
+        return exitcode.OK
+    out = Path(args.out or args.baseline)
+    out.write_text(updated.to_json(), encoding="utf-8")
+    entry = updated.approvals[-1]
+    print(f"approved {len(rows)} change(s) as {entry['id']} by {entry['by']}")
+    print(f"reason: {entry['reason']}")
+    for r in rows:
+        print(f"  {r.kind:24} {r.server:12} {r.path}")
+    print(f"baseline rewritten: {out}")
+    return exitcode.OK
 
 
 def cmd_coverage(args):
@@ -145,6 +177,14 @@ def build_parser():
     p.add_argument("--version", action="version", version=f"mcp-policy-lint {__version__}")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    def formats(sp, html=False):
+        choices = ["text", "ndjson", "json", "sarif"] + (["html"] if html else [])
+        sp.add_argument("--format", choices=choices, default="text",
+                        help="text for humans; json/ndjson/sarif for machines")
+        sp.add_argument("--out", help="write the report to this path instead of stdout")
+        if html:
+            sp.add_argument("--html-out", help="output path for --format html (default report.html)")
+
     def common(sp, with_path=True):
         if with_path:
             sp.add_argument("path", nargs="+", help="config file or directory")
@@ -155,8 +195,7 @@ def build_parser():
 
     s = sub.add_parser("scan", help="lint a config and render findings")
     common(s)
-    s.add_argument("--format", choices=["text", "ndjson", "json", "html"], default="text")
-    s.add_argument("--html-out", help="output path for --format html")
+    formats(s, html=True)
     s.set_defaults(func=cmd_scan)
 
     s = sub.add_parser("init", help="write an approved policy baseline")
@@ -171,8 +210,17 @@ def build_parser():
 
     s = sub.add_parser("check", help="CI gate: findings + drift -> exit code")
     common(s)
+    formats(s, html=False)
     s.add_argument("--baseline", help="policy.lock.json")
     s.set_defaults(func=cmd_check)
+
+    s = sub.add_parser("approve", help="accept the current config as the new baseline, with a receipt")
+    s.add_argument("path", nargs="+")
+    s.add_argument("--baseline", default="policy.lock.json")
+    s.add_argument("--reason", required=True, help="why this change is acceptable (recorded in the baseline)")
+    s.add_argument("--by", help="who approved it (default: MCP_POLICY_LINT_BY, GITHUB_ACTOR, GIT_AUTHOR_NAME, login name)")
+    s.add_argument("--out", help="write elsewhere instead of rewriting the baseline")
+    s.set_defaults(func=cmd_approve)
 
     s = sub.add_parser("coverage", help="what the scan consumed, and what it could not")
     common(s)

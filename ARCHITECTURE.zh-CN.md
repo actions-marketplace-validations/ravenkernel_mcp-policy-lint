@@ -14,7 +14,8 @@ mcp-policy-lint scan .            discover   决定读哪些文件
                           rules      ServerSpec -> [Finding]
 mcp-policy-lint diff / check      policy     基线:谁被批准过,它的指纹是什么
                           diff       当前权限面 vs 已批准权限面
-mcp-policy-lint coverage          report     text / ndjson / json / 单文件 HTML
+mcp-policy-lint approve           review     唯一会写基线的命令,并把理由记下来
+mcp-policy-lint coverage          report     text / ndjson / json / sarif / 单文件 HTML
 -- 退出 --                exitcode   findings + drift + --strict -> 0 / 1 / 2 / 3
 ```
 
@@ -25,7 +26,8 @@ mcp-policy-lint coverage          report     text / ndjson / json / 单文件 HT
 3. **rules** —— 八条注册规则只读 `ServerSpec`,从不碰原始 JSON;所以规则不会因为没见过某种配置形态而崩。`mcp-policy-lint rules` 会把全部编号打出来,含结构类那四条。
 4. **policy** —— `mcp-policy-lint init` 写基线:每个 server 存一个指纹,加上它的权限面(`allowed_tools`、`roots`、`net_egress`、`env_allowlist`、`auto_approve`、`disabled`,以及用于接受既有 finding 的 `waivers`)。env 只存变量名,永不存值。
 5. **diff** —— `mcp-policy-lint diff` 做结构化比对,不是文本 diff:server 新增或消失、指纹变化、某一维度多一条或少一条。
-6. **report 与退出码** —— 报告负责把 finding 排版,退出码负责给 CI 一个答案。
+6. **approve** —— 漂移是故意的时候,`mcp-policy-lint approve --reason "..."` 会重写基线,并把一条审计记录(`id`、`at`、`by`、`reason`、`changes`)追加进去。下一次 `check` 通过,而复核者能在同一份 diff 里看到是谁、为什么移动了基线。
+7. **report 与退出码** —— 报告负责把 finding 排版(`text`、`json`、`ndjson`、`sarif`、HTML);SARIF 结果里带规则编号、映射后的级别、配置文件、作为 `logicalLocation` 的 JSON Pointer,以及稳定的 `partialFingerprint`。退出码负责给 CI 一个答案。
 
 ## 退出码才是产品本身
 
@@ -59,7 +61,7 @@ Finding(rule_id, severity, title, message, server, pointer,
         remediation, threat, unknown=False)
 Policy(version=1, servers={name: {fingerprint, transport, allowed_tools, roots,
                                   net_egress, env_allowlist, auto_approve,
-                                  disabled, waivers}})
+                                  disabled, waivers}}, approvals=[...])
 DiffRow(kind, server, path, before, after, severity)
 ```
 
@@ -76,15 +78,16 @@ DiffRow(kind, server, path, before, after, severity)
 | `rules/builtin.py` | 八条内置规则 | 一条规则一个函数,good first issue 的入口 |
 | `policy.py` | 基线 JSON 与指纹 | 新权限维度 + schema 版本号迁移 |
 | `diff.py` | 结构化比对 | 新 `DiffRow.kind` 及其严重级别 |
-| `report.py` | 五种渲染器,HTML 自包含 | 新 `render_*` |
-| `cli.py` | 七个子命令,只做编排 | 新 `cmd_*` |
+| `review.py` | 显式批准:必须给理由,并追加凭证 | 一条批准记录里放什么 |
+| `report.py` | 六种渲染器,含 SARIF 2.1.0 与自包含 HTML | 新 `render_*` |
+| `cli.py` | 八个子命令,只做编排 | 新 `cmd_*` |
 | `fixtures/gate` + `scripts/gate_selftest.py` | 退出码契约以数据形式存放 | 新 fixture 及其期望码 |
 
 ## 自骨架起守住的三条约束
 
 1. **零运行时依赖**:`dependencies = []`,CLI 用 `argparse`,测试用 `unittest`,HTML 报告手写内联 CSS。任何新增依赖都得先证明核心路径不需要它。
 2. **unknown 不等于安全**:解析器不认识的 capability 或字段会变成 finding,绝不静默通过 —— 自 0.1.0 起它还要付退出码,`--unknown error` 是默认值。`mcp-policy-lint coverage` 会按文件、按 server 打出「读进去了什么、没读进去什么」。
-3. **只读**:不执行 server、不 fetch 远程 capability、不改你的配置。唯一的写动作是你用 `--out` 指定的报告与基线。
+3. **只读**:不执行 server、不 fetch 远程 capability、不改你的配置。唯一的写动作是你用 `--out` 指定的报告与基线;而基线只经 `approve --reason` 移动,且留下凭证。
 
 ## 明确不做的层次
 

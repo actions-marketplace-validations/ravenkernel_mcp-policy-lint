@@ -129,9 +129,13 @@ class DiffRow:
 class Policy:
     version: int = 1
     servers: dict[str, dict[str, Any]] = field(default_factory=dict)
+    approvals: list[dict[str, Any]] = field(default_factory=list)   # who moved the baseline, and why
 
     def as_dict(self) -> dict:
-        return {"version": self.version, "servers": _clean(self.servers)}
+        out: dict[str, Any] = {"version": self.version, "servers": _clean(self.servers)}
+        if self.approvals:
+            out["approvals"] = _clean(self.approvals)
+        return out
 
     def to_json(self) -> str:
         return json.dumps(self.as_dict(), indent=2, ensure_ascii=False) + "\n"
@@ -144,4 +148,7 @@ class Policy:
         version = data.get("version", 1)
         if version != 1:
             raise ValueError(f"unsupported policy version: {version}")
-        return cls(version=version, servers=data["servers"])
+        approvals = data.get("approvals", [])
+        if not isinstance(approvals, list):
+            raise ValueError("policy 'approvals' must be a list")
+        return cls(version=version, servers=data["servers"], approvals=approvals)

@@ -22,6 +22,10 @@ inputs:
     description: Treat warnings as failures (true or false).
     required: false
     default: 'false'
+  annotations:
+    description: Turn findings and drift into pull-request annotations (true or false).
+    required: false
+    default: 'true'
   extra-args:
     description: Extra arguments appended to mcp-policy-lint check.
     required: false
@@ -29,12 +33,15 @@ inputs:
   version:
     description: Version requirement for the mcp-policy-lint package.
     required: false
-    default: '>=0.2.0,<0.3'
+    default: '>=0.3.0,<0.4'
 
 outputs:
   exit-code:
     description: The exit code mcp-policy-lint returned.
     value: ${{ steps.check.outputs.exit-code }}
+  report:
+    description: Path to the JSON report this run produced.
+    value: ${{ steps.check.outputs.report }}
 
 runs:
   using: composite
@@ -50,13 +57,19 @@ runs:
         MC_BASELINE: ${{ inputs.baseline }}
         MC_UNKNOWN: ${{ inputs.unknown }}
         MC_STRICT: ${{ inputs.strict }}
+        MC_ANNOTATIONS: ${{ inputs.annotations }}
         MC_EXTRA: ${{ inputs.extra-args }}
       run: |
-        set -euo pipefail
-        argv=(--unknown "$MC_UNKNOWN")
+        set -uo pipefail
+        report="${RUNNER_TEMP:-/tmp}/mcp-policy-lint.json"
+        argv=(--unknown "$MC_UNKNOWN" --format json --out "$report")
         if [ -n "$MC_BASELINE" ]; then argv+=(--baseline "$MC_BASELINE"); fi
         if [ "$MC_STRICT" = "true" ]; then argv+=(--strict); fi
         code=0
         mcp-policy-lint check $MC_PATH "${argv[@]}" $MC_EXTRA || code=$?
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        echo "report=$report" >> "$GITHUB_OUTPUT"
+        if [ "$MC_ANNOTATIONS" = "true" ] && [ -f "$report" ]; then
+          python "$GITHUB_ACTION_PATH/scripts/annotate.py" "$report" || true
+        fi
         exit $code

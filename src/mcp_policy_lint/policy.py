@@ -13,7 +13,7 @@ def _egress(s: ServerSpec) -> list[str]:
     return [host] if host else []
 
 
-def build_policy(servers: list[ServerSpec]) -> Policy:
+def build_policy(servers: list[ServerSpec], approvals=None) -> Policy:
     out = {}
     for s in servers:
         out[s.name] = {
@@ -27,7 +27,7 @@ def build_policy(servers: list[ServerSpec]) -> Policy:
             "disabled": bool(s.disabled),
             "waivers": [],
         }
-    return Policy(version=1, servers=out)
+    return Policy(version=1, servers=out, approvals=list(approvals or []))
 
 
 def load_policy(text: str) -> Policy:

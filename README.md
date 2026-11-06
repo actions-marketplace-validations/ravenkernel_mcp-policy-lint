@@ -17,7 +17,7 @@ mcp-policy-lint demo — 2 servers scanned, 6 findings
 no network, no API key, no Docker
 (vs sample baseline: 3 drift rows — run `mcp-policy-lint diff` to inspect)
 
-mcp-policy-lint 0.2.0 — 6 findings
+mcp-policy-lint 0.3.0 — 6 findings
 
 ERROR  POL003  remote       /mcpServers/remote/url                 Plaintext HTTP to a remote endpoint
         http://api.example.com/mcp has no TLS, so tool descriptions and responses can be altered in transit
@@ -39,7 +39,7 @@ WARN   POL006  shell        /mcpServers/shell/tools/0              Tool input ha
         fix: Complete the JSON Schema: declare required fields and enums
 
 exit code: 1
-mcp-policy-lint 0.2.0 coverage — 1 config(s), 2 server(s)
+mcp-policy-lint 0.3.0 coverage — 1 config(s), 2 server(s)
 
 config           server  transport  modeled                       unmodeled
 ---------------  ------  ---------  ----------------------------  ---------
@@ -64,7 +64,37 @@ mcp-policy-lint scan examples/unsafe.mcp.json --format ndjson
 mcp-policy-lint check examples/unsafe.mcp.json --baseline policy.lock.json --strict
 ```
 
-`scan` renders `text / ndjson / json / html`; `--html-out report.html` writes a single self-contained file (no external assets, opens straight from `file://`). `diff` prints an add / remove / modify table on its own.
+`scan` renders `text / ndjson / json / html`; `--html-out report.html` writes a single self-contained file (no external assets, opens straight from `file://`). `check` and `scan` both render `sarif` (2.1.0) and accept `--out` for any non-text format. `diff` prints an add / remove / modify table on its own.
+
+## The baseline only moves when someone says why
+
+A drift failure is a question, not an error. Answering it is a command with a receipt:
+
+```bash
+mcp-policy-lint check mcp.json --baseline policy.lock.json   # exit 2: config and baseline disagree
+mcp-policy-lint approve mcp.json --baseline policy.lock.json \
+  --reason "audited: read_anything only reads the docs repo"
+mcp-policy-lint check mcp.json --baseline policy.lock.json   # exit 0: approved
+```
+
+`approve` refuses to run without `--reason`, rewrites the baseline, and appends an audit entry to `policy.lock.json` — `id`, `at`, `by`, `reason`, and the change kinds it accepted:
+
+```json
+"approvals": [
+  {
+    "at": "2026-11-06T00:18:38Z",
+    "by": "alice",
+    "changes": [
+      {"kind": "fingerprint_changed", "server": "c", "path": "/servers/c/fingerprint"},
+      {"kind": "auto_approve_added", "server": "c", "path": "/servers/c/auto_approve"}
+    ],
+    "id": "ec0b40623fe9",
+    "reason": "audited the new approval list"
+  }
+]
+```
+
+Who moved the baseline, and why, lands in the same review as the config change. No other subcommand writes to the baseline, and none edits a config.
 
 ## Unknowns cost an exit code
 
@@ -129,6 +159,21 @@ It answers three questions only: what permissions does the config **declare**, d
 
 Priority is `3 > 2 > 1 > 0`, designed to be passed straight to `sys.exit()` in GitHub Actions.
 
+## Evidence a machine can read
+
+```bash
+mcp-policy-lint check mcp.json --format sarif --out mcplint.sarif   # SARIF 2.1.0
+mcp-policy-lint scan mcp.json --format json                          # findings + exit code + source map
+```
+
+GitHub code scanning reads the SARIF file directly (`github/codeql-action/upload-sarif@v3`). Each result carries the rule id, the severity mapped to `error / warning / note`, the config file, the JSON Pointer as a `logicalLocation`, and a stable `partialFingerprint` so a finding survives renames instead of reopening. Drift rows use rule id `DRIFT`.
+
+The GitHub Action takes the shorter path: it turns every finding into a pull-request annotation on the config file, named by rule and JSON Pointer.
+
+```
+::error file=mcp.json,line=1,title=POL003 remote::Plaintext HTTP to a remote endpoint: http://api.example.com/mcp has no TLS ...
+```
+
 ## Adding a rule is one function
 
 ```python
@@ -155,6 +200,7 @@ The rule registry, policy format, report renderers and config discovery are inde
     baseline: policy.lock.json    # optional; omit to only report findings
     unknown: error                # error (default) | warn | ignore
     strict: false
+    annotations: true             # findings as pull-request annotations
 ```
 
 The action installs `mcp-policy-lint`, runs `mcp-policy-lint check`, and fails the job with its own exit code — the same `0/1/2/3` you see locally. It writes nothing but the baseline you ask for, and it never edits a config file.
@@ -165,10 +211,13 @@ The action installs `mcp-policy-lint`, runs `mcp-policy-lint check`, and fails t
 | `baseline` | empty | turns on drift detection against `policy.lock.json` |
 | `unknown` | `error` | price of a field mcp-policy-lint cannot model |
 | `strict` | `false` | warnings become failures |
+| `annotations` | `true` | one pull-request annotation per finding and per drift row |
 | `extra-args` | empty | appended to `mcp-policy-lint check` |
-| `version` | `>=0.2.0,<0.3` | pip requirement for the package |
+| `version` | `>=0.3.0,<0.4` | pip requirement for the package |
 
 ## Status
+
+0.3.0 adds the two things a reviewer was missing: `approve --reason` writes an explicit, auditable approval into the baseline instead of leaving "edit this JSON by hand" as the answer to drift, and `--format sarif` (plus pull-request annotations in the Action) puts every finding where code review already looks. No rule changed, no exit code changed.
 
 0.2.0 is a rename: the command, the import package, the repository and the action are all `mcp-policy-lint` now, and rule ids moved from `MCP001` to `POL001`. Nothing about behaviour changed — same rules, same exit codes. The reason is discoverability: `mcplint` was already a crowded name, and ids like `MCP009` mean something else entirely in a neighbouring scanner. 0.1.3 ships the GitHub Action above and nothing else — same rules, same exit codes — so the PyPI page documents the way most teams will actually run it. 0.1.2: runs end to end, 9 built-in rules (`POL001-006`, `POL008`, `POL009`, `POL010`), covered by tests at both the CLI and library level. Lint messages are English as of 0.1.1 (0.1.0 shipped the same rules with Chinese messages). 0.1.2 is the first PyPI release, and it turns the crashes and false positives I found by hand into tests: a field with the wrong type is `POL009` instead of an exception, a server name containing `/` produces a valid pointer (`a~1b`), two servers with the same name are `POL011`, `git -c user.name=x` is not read as a shell, and a mistyped `--rule` id or flag exits 3 instead of passing silently.
 

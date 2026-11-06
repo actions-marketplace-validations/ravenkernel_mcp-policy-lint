@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from . import __version__
-from .model import DiffRow, Finding
+from .model import DiffRow, Finding, stable_hash
 
 
 def _rows(findings, diffs):
@@ -62,11 +62,100 @@ def render_ndjson(findings, diffs) -> str:
     return "\n".join(json.dumps(r, ensure_ascii=False) for r in _rows(findings, diffs)) + "\n"
 
 
-def render_json(findings, diffs, exit_code: int) -> str:
-    return json.dumps({"schema_version": 1, "tool": "mcp-policy-lint", "version": __version__,
-                       "exit_code": exit_code, "findings": [f.as_dict() for f in findings],
-                       "diff": [d.as_dict() for d in diffs]},
-                      indent=2, ensure_ascii=False) + "\n"
+def render_json(findings, diffs, exit_code: int, servers=None) -> str:
+    doc = {"schema_version": 1, "tool": "mcp-policy-lint", "version": __version__,
+           "exit_code": exit_code, "findings": [f.as_dict() for f in findings],
+           "diff": [d.as_dict() for d in diffs]}
+    if servers:
+        doc["sources"] = {s.name: s.source for s in servers if s.source}
+    return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
+
+
+_SARIF_LEVEL = {"error": "error", "warn": "warning", "info": "note"}
+_HELP_URI = "https://github.com/ravenkernel/mcp-policy-lint#rules"
+
+
+def _uri(path: str) -> str:
+    """Repository-relative POSIX path: what code scanning expects in artifactLocation.uri."""
+    if not path:
+        return ""
+    p = Path(path)
+    try:
+        return p.resolve().relative_to(Path.cwd().resolve()).as_posix()
+    except (ValueError, OSError):
+        return p.as_posix()
+
+
+def _location(source: str, ref: str) -> dict:
+    """A SARIF location: the config file when we know it, the pointer we always know."""
+    loc = {"logicalLocations": [{"fullyQualifiedName": ref, "kind": "member"}]}
+    uri = _uri(source)
+    if uri:
+        loc["physicalLocation"] = {"artifactLocation": {"uri": uri},
+                                   "region": {"startLine": 1}}
+    return loc
+
+
+def render_sarif(findings, diffs, exit_code: int, servers=None) -> str:
+    """SARIF 2.1.0 for GitHub code scanning. One result per finding, one rule per id."""
+    where = {s.name: s.source for s in (servers or [])}
+    rules: dict[str, dict] = {}
+    results = []
+
+    def rule(rule_id, title, message, remediation, severity, threat):
+        if rule_id not in rules:
+            rules[rule_id] = {
+                "id": rule_id, "name": rule_id,
+                "shortDescription": {"text": title},
+                "fullDescription": {"text": message},
+                "help": {"text": remediation or title, "markdown": remediation or title},
+                "helpUri": _HELP_URI,
+                "defaultConfiguration": {"level": _SARIF_LEVEL.get(severity, "note")},
+                "properties": {"threat": threat or "unknown"},
+            }
+
+    for f in findings:
+        rule(f.rule_id, f.title, f.message, f.remediation, f.severity, f.threat)
+        text = f"{f.title}: {f.message}"
+        if f.remediation:
+            text += f" Fix: {f.remediation}"
+        results.append({
+            "ruleId": f.rule_id,
+            "level": _SARIF_LEVEL.get(f.severity, "note"),
+            "message": {"text": text},
+            "locations": [_location(where.get(f.server, ""), f.pointer)],
+            "partialFingerprints": {"mcpPolicyLint/v1": stable_hash([f.rule_id, f.server, f.pointer])},
+            "properties": {"server": f.server, "pointer": f.pointer, "unknown": f.unknown},
+        })
+
+    for d in diffs:
+        message = f"{d.kind}: {d.path} {d.before!r} -> {d.after!r}"
+        rule("DRIFT", "Policy drift", message, "Run mcp-policy-lint approve --reason ...", d.severity, "policy drift")
+        results.append({
+            "ruleId": "DRIFT",
+            "level": _SARIF_LEVEL.get(d.severity, "note"),
+            "message": {"text": message},
+            "locations": [_location(where.get(d.server, ""), d.path)],
+            "partialFingerprints": {"mcpPolicyLint/v1": stable_hash(["DRIFT", d.server, d.path])},
+            "properties": {"server": d.server, "pointer": d.path},
+        })
+
+    doc = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {
+                "name": "mcp-policy-lint",
+                "informationUri": "https://github.com/ravenkernel/mcp-policy-lint",
+                "version": __version__,
+                "rules": [rules[k] for k in sorted(rules)],
+            }},
+            "results": results,
+            "invocations": [{"executionSuccessful": exit_code in (0, 1, 2),
+                             "exitCode": exit_code}],
+        }],
+    }
+    return json.dumps(doc, indent=2, ensure_ascii=False) + "\n"
 
 
 _CSS = """

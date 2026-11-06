@@ -17,7 +17,7 @@ mcp-policy-lint demo — 2 servers scanned, 6 findings
 no network, no API key, no Docker
 (vs sample baseline: 3 drift rows — run `mcp-policy-lint diff` to inspect)
 
-mcp-policy-lint 0.2.0 — 6 findings
+mcp-policy-lint 0.3.0 — 6 findings
 
 ERROR  POL003  remote       /mcpServers/remote/url                 Plaintext HTTP to a remote endpoint
         http://api.example.com/mcp has no TLS, so tool descriptions and responses can be altered in transit
@@ -39,7 +39,7 @@ WARN   POL006  shell        /mcpServers/shell/tools/0              Tool input ha
         fix: Complete the JSON Schema: declare required fields and enums
 
 exit code: 1
-mcp-policy-lint 0.2.0 coverage — 1 config(s), 2 server(s)
+mcp-policy-lint 0.3.0 coverage — 1 config(s), 2 server(s)
 
 config           server  transport  modeled                       unmodeled
 ---------------  ------  ---------  ----------------------------  ---------
@@ -64,7 +64,37 @@ mcp-policy-lint scan examples/unsafe.mcp.json --format ndjson
 mcp-policy-lint check examples/unsafe.mcp.json --baseline policy.lock.json --strict
 ```
 
-`scan` 输出 `text / ndjson / json / html`，`--html-out report.html` 生成单文件报告（无外部资源，`file://` 直接打开）。`diff` 单独输出 add / remove / modify 表。
+`scan` 输出 `text / ndjson / json / html`，`--html-out report.html` 生成单文件报告（无外部资源，`file://` 直接打开）。`check` 与 `scan` 都支持 `sarif`（2.1.0），非文本格式都可以用 `--out` 写文件。`diff` 单独输出 add / remove / modify 表。
+
+## 基线只在有人说清楚理由时才移动
+
+漂移失败是一个问题，不是一个错误。回答它是一条命令，并且留下凭证：
+
+```bash
+mcp-policy-lint check mcp.json --baseline policy.lock.json   # 退出 2：配置与基线不一致
+mcp-policy-lint approve mcp.json --baseline policy.lock.json \
+  --reason "已审计：read_anything 只读 docs 仓库"
+mcp-policy-lint check mcp.json --baseline policy.lock.json   # 退出 0：已批准
+```
+
+`approve` 没有 `--reason` 会直接拒绝执行；它重写基线，并往 `policy.lock.json` 追加一条审计记录——`id`、`at`、`by`、`reason`，以及它接受了哪些变更类型：
+
+```json
+"approvals": [
+  {
+    "at": "2026-11-06T00:18:38Z",
+    "by": "alice",
+    "changes": [
+      {"kind": "fingerprint_changed", "server": "c", "path": "/servers/c/fingerprint"},
+      {"kind": "auto_approve_added", "server": "c", "path": "/servers/c/auto_approve"}
+    ],
+    "id": "ec0b40623fe9",
+    "reason": "audited the new approval list"
+  }
+]
+```
+
+谁移动了基线、为什么移动，会和配置变更出现在同一次 review 里。除此之外没有别的子命令会写基线，也没有任何子命令会改配置。
 
 ## unknown 是要付账的
 
@@ -129,6 +159,21 @@ cline-autoapprove-plus.json     (drift)                         2    2  ok
 
 优先级 `3 > 2 > 1 > 0`，与 `sys.exit()` 直接对接 GitHub Actions。
 
+## 机器能读的证据
+
+```bash
+mcp-policy-lint check mcp.json --format sarif --out mcplint.sarif   # SARIF 2.1.0
+mcp-policy-lint scan mcp.json --format json                          # 发现项 + 退出码 + 来源文件
+```
+
+GitHub code scanning 可以直接读这份 SARIF（`github/codeql-action/upload-sarif@v3`）。每条结果都带规则编号、映射成 `error / warning / note` 的严重级别、来源配置文件、作为 `logicalLocation` 的 JSON Pointer，以及稳定的 `partialFingerprint`，让同一个问题在改名后不会被当成新问题重开。漂移行的规则编号是 `DRIFT`。
+
+GitHub Action 走的是更短的路：它把每条发现项变成配置文件上的一条 PR annotation，标题由规则编号与 JSON Pointer 组成。
+
+```
+::error file=mcp.json,line=1,title=POL003 remote::Plaintext HTTP to a remote endpoint: http://api.example.com/mcp has no TLS ...
+```
+
 ## 加一条规则只要一个函数
 
 ```python
@@ -155,6 +200,7 @@ def no_root_ssh(server):
     baseline: policy.lock.json    # 可选；不填时只报 findings
     unknown: error                # error（默认）| warn | ignore
     strict: false
+    annotations: true             # 把发现项写成 PR annotation
 ```
 
 Action 会安装 `mcp-policy-lint`、运行 `mcp-policy-lint check`，并用 mcp-policy-lint 自己的退出码决定这个 job 通过还是失败——和你在本地看到的 `0/1/2/3` 完全一致。除了你要它写出的基线文件，它不写任何东西，也从不改配置文件。
@@ -165,10 +211,13 @@ Action 会安装 `mcp-policy-lint`、运行 `mcp-policy-lint check`，并用 mcp
 | `baseline` | 空 | 开启针对 `policy.lock.json` 的漂移检测 |
 | `unknown` | `error` | 无法建模的字段要付的代价 |
 | `strict` | `false` | 警告升级为失败 |
+| `annotations` | `true` | 每条发现项、每条漂移各生成一条 PR annotation |
 | `extra-args` | 空 | 追加到 `mcp-policy-lint check` 后面 |
-| `version` | `>=0.2.0,<0.3` | 安装时的 pip 版本要求 |
+| `version` | `>=0.3.0,<0.4` | 安装时的 pip 版本要求 |
 
 ## 状态
+
+0.3.0 补上 reviewer 缺的两件事：`approve --reason` 把「手工改这个 JSON」换成一条显式、可审计的批准记录写进基线；`--format sarif`（以及 Action 里的 PR annotation）把每条发现项放到 code review 本就该看的地方。规则没有变，退出码没有变。
 
 0.2.0 是一次改名：命令、import 包名、仓库名与 Action 全部统一为 mcp-policy-lint，规则编号从 MCP001 改成 POL001。行为没有任何变化——同样的规则、同样的退出码。原因是可发现性：mcplint 这个名字已经很拥挤，而 MCP009 这类编号在相邻的扫描器里指的是完全不同的东西。0.1.3 只增加了上面的 GitHub Action，规则与退出码不变，这样 PyPI 页面上也能看到大多数团队实际的使用方式。0.1.2：可运行端到端，内置 9 条规则（POL001-006 / 008 / 009 / 010），CLI 与库均可测。自 0.1.1 起 lint 输出为英文（0.1.0 规则相同，输出为中文）。0.1.2 是第一个 PyPI 版本，把我手工撞出来的崩溃与误报变成了测试：字段类型不对是 POL009 而不是异常，名字含 `/` 的 server 产出合法 pointer（`a~1b`），同名 server 报 POL011，`git -c user.name=x` 不再当作 shell，`--rule` 编号或参数打错是退出码 3 而不是静默通过。
 
